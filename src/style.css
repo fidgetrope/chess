@@ -1,0 +1,230 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #14100c;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#scene-container {
+  position: absolute;
+  inset: 0;
+}
+
+#scene-container canvas {
+  display: block;
+  touch-action: none; /* let OrbitControls handle touch gestures itself */
+}
+
+/* Overlay UI sits above the canvas; only its interactive controls should
+   intercept pointer events so the board underneath stays clickable. */
+#ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: 16px;
+  color: #f2e9dc;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+#top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#status-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+#turn-indicator {
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: rgba(20, 14, 10, 0.55);
+  padding: 8px 14px;
+  border-radius: 8px;
+  pointer-events: auto;
+}
+
+#check-banner {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ff6b5e;
+  background: rgba(20, 14, 10, 0.55);
+  border: 1px solid #ff6b5e;
+  padding: 5px 12px;
+  border-radius: 8px;
+  pointer-events: auto;
+}
+
+#captured-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  background: rgba(20, 14, 10, 0.55);
+  padding: 8px 14px;
+  border-radius: 8px;
+  pointer-events: auto;
+  min-width: 190px;
+}
+
+.captured-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.captured-label {
+  opacity: 0.7;
+  font-size: 0.8rem;
+  min-width: 54px;
+}
+
+.captured-pieces {
+  font-size: 1.15rem;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+#side-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 220px;
+  max-height: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+#controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: rgba(20, 14, 10, 0.6);
+  padding: 10px 12px;
+  border-radius: 10px;
+  pointer-events: auto;
+}
+
+#controls label {
+  font-size: 0.85rem;
+}
+
+#controls select,
+#controls button,
+#play-again,
+#promotion-choices button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #6b4a34;
+  background: #2b1f16;
+  color: #f2e9dc;
+  cursor: pointer;
+}
+
+#controls select:hover,
+#controls button:hover,
+#play-again:hover,
+#promotion-choices button:hover {
+  background: #3a2a1c;
+}
+
+#move-list {
+  margin: 0;
+  padding: 10px 10px 10px 34px;
+  list-style-position: outside;
+  overflow-y: auto;
+  background: rgba(20, 14, 10, 0.6);
+  border-radius: 10px;
+  pointer-events: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+#move-list li {
+  padding: 2px 0;
+}
+
+#move-list li::marker {
+  color: #b89a7f;
+}
+
+#move-list .ply {
+  display: inline-block;
+  min-width: 68px;
+}
+
+#move-list .ply.current {
+  color: #ffd54a;
+  font-weight: 600;
+}
+
+#promotion-picker,
+#game-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 7, 5, 0.65);
+  pointer-events: auto;
+}
+
+#promotion-picker.hidden,
+#game-over.hidden,
+#check-banner.hidden {
+  display: none;
+}
+
+#promotion-panel,
+#game-over-panel {
+  background: #2b1f16;
+  border: 1px solid #6b4a34;
+  border-radius: 12px;
+  padding: 24px 32px;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+#promotion-panel p {
+  margin: 0 0 14px;
+  font-weight: 600;
+}
+
+#promotion-choices {
+  display: flex;
+  gap: 8px;
+}
+
+#game-over-message {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0 0 18px;
+}

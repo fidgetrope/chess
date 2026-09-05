@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Chess</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="scene-container"></div>
+
+      <div id="ui">
+        <div id="top-bar">
+          <div id="status-block">
+            <div id="turn-indicator">Your turn</div>
+            <div id="check-banner" class="hidden">Check</div>
+          </div>
+          <div id="captured-tray">
+            <div id="captured-by-you" class="captured-row"><span class="captured-label">You took</span><span class="captured-pieces"></span></div>
+            <div id="captured-by-ai" class="captured-row"><span class="captured-label">AI took</span><span class="captured-pieces"></span></div>
+          </div>
+        </div>
+
+        <div id="side-panel">
+          <div id="controls">
+            <label for="difficulty">Difficulty</label>
+            <select id="difficulty">
+              <option value="easy">Easy</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+            <button id="undo" type="button">Undo</button>
+            <button id="restart" type="button">Restart</button>
+          </div>
+          <ol id="move-list"></ol>
+        </div>
+
+        <div id="promotion-picker" class="hidden">
+          <div id="promotion-panel">
+            <p>Promote to</p>
+            <div id="promotion-choices">
+              <button type="button" data-piece="q">Queen</button>
+              <button type="button" data-piece="r">Rook</button>
+              <button type="button" data-piece="b">Bishop</button>
+              <button type="button" data-piece="n">Knight</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="game-over" class="hidden">
+          <div id="game-over-panel">
+            <p id="game-over-message"></p>
+            <button id="play-again" type="button">Play Again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
