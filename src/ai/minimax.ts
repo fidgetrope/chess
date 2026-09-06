@@ -3,7 +3,12 @@ import type { MoveOption, PieceSymbol } from '../core/types.ts';
 import { evaluate } from './evaluate.ts';
 
 /** Score magnitude for a forced mate; the ply offset makes nearer mates preferred. */
-const MATE_SCORE = 1_000_000;
+export const MATE_SCORE = 1_000_000;
+
+/** True if a centipawn score represents a forced mate for one side or the other. */
+export function isMateScore(cp: number): boolean {
+  return Math.abs(cp) > MATE_SCORE - 1000;
+}
 
 const CAPTURE_VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
@@ -176,4 +181,82 @@ export function searchIterativeDeepening(
   }
 
   return { move: best, stats };
+}
+
+// ---------------------------------------------------------------------------
+// Analysis — used by the coach, not by the opponent. Always full strength
+// regardless of difficulty, and it ranks the strongest candidate moves so
+// the coach can compare the player's choice against the best.
+// ---------------------------------------------------------------------------
+
+export interface RootMoveScore {
+  move: MoveOption;
+  /** Score from the analysing side's point of view; positive is good for them. */
+  scoreCp: number;
+}
+
+export interface Analysis {
+  /** The position's eval from the side to move's point of view. */
+  scoreCp: number;
+  /** The strongest candidate moves, best first (not every legal move). */
+  moves: RootMoveScore[];
+  /** Deepest ply fully searched. */
+  depth: number;
+}
+
+function sameMove(a: MoveOption, b: MoveOption): boolean {
+  return a.from === b.from && a.to === b.to && a.promotion === b.promotion;
+}
+
+/** True score of one specific move (full window, no time limit). */
+export function scoreMove(
+  game: ChessGame,
+  move: { from: string; to: string; promotion?: PieceSymbol },
+  depth: number,
+): number {
+  const stats: SearchStats = { nodes: 0, depth, score: 0 };
+  game.move(move);
+  const score = -negamax(game, depth - 1, 1, -Infinity, Infinity, Number.POSITIVE_INFINITY, stats);
+  game.undo();
+  return score;
+}
+
+/**
+ * A fast pruned search for the honest best move and eval, then a full-window
+ * re-score of just the strongest handful of candidates so they can be
+ * ranked for the coach panel. `timeBudgetMs` caps wall time for the phone.
+ */
+export function analyzePosition(
+  game: ChessGame,
+  opts: { maxDepth?: number; timeBudgetMs?: number } = {},
+): Analysis {
+  const maxDepth = opts.maxDepth ?? 5;
+  const budget = opts.timeBudgetMs ?? 1200;
+  const deadline = Date.now() + budget;
+
+  // 1. Pruned iterative-deepening search: honest best move + eval + depth reached.
+  const pruned = searchIterativeDeepening(game.clone(), Math.round(budget * 0.55), 0, maxDepth);
+  const evalCp = pruned.stats.score;
+  const bestMove = pruned.move;
+  const depth = Math.max(1, pruned.stats.depth);
+
+  // 2. Re-score the strongest candidates at that depth, full window.
+  const stats: SearchStats = { nodes: 0, depth, score: 0 };
+  const candidates = orderMoves(game.legalMoves(), bestMove).slice(0, 6);
+  const scored: RootMoveScore[] = [];
+  for (const move of candidates) {
+    if (Date.now() >= deadline) break;
+    game.move({ from: move.from, to: move.to, promotion: move.promotion });
+    const scoreCp = -negamax(game, depth - 1, 1, -Infinity, Infinity, deadline, stats);
+    game.undo();
+    scored.push({ move, scoreCp });
+  }
+  scored.sort((a, b) => b.scoreCp - a.scoreCp);
+
+  // Guarantee the pruned best move is present even if the deadline cut it off.
+  if (bestMove && !scored.some((s) => sameMove(s.move, bestMove))) {
+    scored.unshift({ move: bestMove, scoreCp: evalCp });
+  }
+
+  return { scoreCp: scored[0]?.scoreCp ?? evalCp, moves: scored, depth };
 }

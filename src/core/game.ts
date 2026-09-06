@@ -194,4 +194,25 @@ export class ChessGame {
   clone(): ChessGame {
     return new ChessGame(this.fen());
   }
+
+  /**
+   * Runs `fn` with the side to move flipped and no move actually made — a
+   * "null move" — then restores. Used by the coach to ask "what is the
+   * opponent threatening if I do nothing?". Returns `null` without calling
+   * `fn` when the side to move is in check, since passing out of check is
+   * meaningless.
+   */
+  withNullMove<T>(fn: () => T): T | null {
+    if (this.chess.isCheck()) return null;
+    const saved = this.chess.fen();
+    const parts = saved.split(' ');
+    parts[1] = parts[1] === 'w' ? 'b' : 'w'; // flip side to move
+    parts[3] = '-'; // a pass forfeits any en-passant right
+    try {
+      this.chess.load(parts.join(' '), { skipValidation: true });
+      return fn();
+    } finally {
+      this.chess.load(saved, { skipValidation: true });
+    }
+  }
 }
