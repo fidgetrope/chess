@@ -37,6 +37,15 @@ const checkRingMaterial = new THREE.MeshBasicMaterial({
   opacity: 0.9,
 });
 
+// The coach's suggested move — a bright ring on both its from and to squares.
+const hintRingGeometry = new THREE.RingGeometry(0.36, 0.48, 40);
+const hintRingMaterial = new THREE.MeshBasicMaterial({
+  color: 0x5aa9ff,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.9,
+});
+
 function flatMarkerAt(
   geometry: THREE.BufferGeometry,
   material: THREE.Material,
@@ -57,15 +66,25 @@ export interface HighlightState {
   moves: MoveOption[];
   /** King square to ring in red when the side to move is in check. */
   checkSquare: { row: number; col: number } | null;
+  /** The coach's suggested move, when the hint is showing. */
+  hintMove: { from: string; to: string } | null;
 }
 
 /**
  * Replaces the contents of `highlightGroup`: a ring on the selected
  * square, a dot on each quiet destination, a red ring on each capturable
- * destination, and a red ring on a king that is in check.
+ * destination, a red ring on a king that is in check, and blue rings on
+ * the coach's hinted move.
  */
 export function updateHighlights(highlightGroup: THREE.Group, state: HighlightState): void {
   highlightGroup.clear();
+
+  if (state.hintMove) {
+    for (const sq of [state.hintMove.from, state.hintMove.to]) {
+      const { row, col } = squareToGrid(sq);
+      highlightGroup.add(flatMarkerAt(hintRingGeometry, hintRingMaterial, row, col));
+    }
+  }
 
   if (state.checkSquare) {
     highlightGroup.add(

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import AiWorker from '../ai/worker.ts?worker';
 import type { AiRequest, AiResponse } from '../ai/worker.ts';
+import CoachWorker from '../ai/coachWorker.ts?worker';
+import type { CoachRequest, CoachResponse } from '../ai/coachWorker.ts';
 import type { DifficultyLevel } from '../ai/difficulty.ts';
 import { ChessGame, squareToGrid } from '../core/game.ts';
 import { loadGame, saveGame } from '../core/persistence.ts';
@@ -33,7 +35,26 @@ export function startGame(container: HTMLElement): void {
   let pendingAi: { requestId: number; startedAt: number } | null = null;
   let setRenderLoopActive: (active: boolean) => void = () => {};
 
+  // Coach (opt-in): a second worker analyses the human's turn, off by default.
+  let coachEnabled = false;
+  let blunderWarnEnabled = false;
+  let coachRequestId = 0;
+  let latestCoach: CoachResponse | null = null;
+  let hintMove: { from: string; to: string } | null = null;
+  let pendingBlunderCheck: { requestId: number; resolve: (b: CoachResponse['blunder']) => void } | null = null;
+
   const worker = new AiWorker();
+
+  // The coach worker is created lazily the first time the coach is actually
+  // used, so a player who never turns it on never downloads the extra chunk.
+  let coachWorker: Worker | null = null;
+  function getCoachWorker(): Worker {
+    if (!coachWorker) {
+      coachWorker = new CoachWorker();
+      coachWorker.onmessage = onCoachMessage;
+    }
+    return coachWorker;
+  }
   const pieceMeshes = new Map<string, PieceMesh>(); // keyed by algebraic square name
 
   const board2d = createBoard2d((square) => void handlePick(square));
@@ -65,11 +86,16 @@ export function startGame(container: HTMLElement): void {
     return last ? { from: last.from, to: last.to } : null;
   }
 
-  /** Push the current selection / legal-move / check state into whichever board is showing. */
+  /** Push the current selection / legal-move / check / hint state into whichever board is showing. */
   function refreshView(): void {
     const checkSquare = game.inCheck() ? game.kingSquare(game.turn) : null;
     if (viewMode === '3d') {
-      updateHighlights(sceneRefs.highlightGroup, { selected, moves: legalFromSelected, checkSquare });
+      updateHighlights(sceneRefs.highlightGroup, {
+        selected,
+        moves: legalFromSelected,
+        checkSquare,
+        hintMove,
+      });
     } else {
       board2d.render({
         board: game.board(),
@@ -77,8 +103,99 @@ export function startGame(container: HTMLElement): void {
         moves: legalFromSelected,
         checkSquare,
         lastMove: lastMovePair(),
+        hintMove,
       });
     }
+  }
+
+  // ---- Coach ----------------------------------------------------------------
+
+  function pushCoachAdvice(): void {
+    if (!coachEnabled || !latestCoach) return;
+    ui.setCoachAdvice({
+      standing: latestCoach.standing,
+      threat: latestCoach.threat?.text ?? 'No immediate threats.',
+      hint: latestCoach.hint
+        ? {
+            text: latestCoach.hint.san,
+            reason: latestCoach.hint.reason,
+            from: latestCoach.hint.from,
+            to: latestCoach.hint.to,
+          }
+        : null,
+    });
+  }
+
+  /** Analyse the current position for the coach panel — only on the human's turn, only when enabled. */
+  function requestCoachAnalysis(): void {
+    hintMove = null;
+    latestCoach = null;
+    if (
+      !coachEnabled ||
+      busy ||
+      game.turn !== HUMAN_COLOR ||
+      game.outcome().type !== 'in-progress'
+    ) {
+      return;
+    }
+    const requestId = ++coachRequestId;
+    if (ui.isCoachPanelOpen()) ui.setCoachThinking();
+    getCoachWorker().postMessage({
+      requestId,
+      fen: game.fen(),
+      humanColor: HUMAN_COLOR,
+      mode: 'panel',
+    } satisfies CoachRequest);
+  }
+
+  function requestBlunderCheck(move: MoveOption): Promise<CoachResponse['blunder']> {
+    return new Promise((resolve) => {
+      const requestId = ++coachRequestId;
+      pendingBlunderCheck = { requestId, resolve };
+      getCoachWorker().postMessage({
+        requestId,
+        fen: game.fen(),
+        humanColor: HUMAN_COLOR,
+        mode: 'blunderCheck',
+        move: { from: move.from, to: move.to, promotion: move.promotion },
+      } satisfies CoachRequest);
+    });
+  }
+
+  function blunderPhrase(verdict: NonNullable<CoachResponse['blunder']>): string {
+    if (verdict.intoMate) return 'walks into a forced mate';
+    if (verdict.dropCp >= 650) return 'looks like it drops a piece';
+    if (verdict.dropCp >= 300) return 'looks like it loses material';
+    return 'looks like a mistake';
+  }
+
+  /** Returns false only when the coach flags a blunder and the player chooses to take it back. */
+  async function confirmMove(move: MoveOption): Promise<boolean> {
+    if (!blunderWarnEnabled) return true;
+    // The coach's own top move is never a blunder.
+    if (latestCoach?.hint && latestCoach.hint.from === move.from && latestCoach.hint.to === move.to) {
+      return true;
+    }
+    const verdict = await requestBlunderCheck(move);
+    if (!verdict) return true;
+    return ui.askBlunderConfirm(
+      `That ${blunderPhrase(verdict)} — the engine prefers ${verdict.bestSan}. Play it anyway?`,
+    );
+  }
+
+  function onCoachMessage(event: MessageEvent<CoachResponse>): void {
+    const msg = event.data;
+    if (msg.mode === 'blunderCheck') {
+      if (pendingBlunderCheck?.requestId === msg.requestId) {
+        const resolve = pendingBlunderCheck.resolve;
+        pendingBlunderCheck = null;
+        resolve(msg.blunder);
+      }
+      return;
+    }
+    if (msg.requestId !== coachRequestId) return; // stale
+    latestCoach = msg;
+    if (ui.isCoachPanelOpen()) pushCoachAdvice();
   }
 
   function updateCapturedUi(): void {
@@ -113,6 +230,8 @@ export function startGame(container: HTMLElement): void {
         .map((m) => ({ from: m.from, to: m.to, promotion: m.promotion })),
       difficulty,
       view: viewMode,
+      coach: coachEnabled,
+      blunderWarn: blunderWarnEnabled,
     });
   }
 
@@ -136,6 +255,7 @@ export function startGame(container: HTMLElement): void {
     updateCapturedUi();
     ui.setUndoEnabled(!busy && game.plyCount() > 0 && game.turn === HUMAN_COLOR);
     updateStatusUi();
+    requestCoachAnalysis(); // clears any stale hint; fires a fresh analysis on the human's turn
     refreshView();
     persist();
   }
@@ -254,6 +374,10 @@ export function startGame(container: HTMLElement): void {
           const piece = await ui.askPromotion();
           move = matches.find((m) => m.promotion === piece) ?? move;
         }
+        if (!(await confirmMove(move))) {
+          clearSelection();
+          return;
+        }
         await playMove(move);
         return;
       }
@@ -311,6 +435,30 @@ export function startGame(container: HTMLElement): void {
     onToggleView() {
       toggleView();
     },
+    onCoachEnabledChange(enabled) {
+      coachEnabled = enabled;
+      ui.setCoachSettings(coachEnabled, blunderWarnEnabled);
+      persist();
+      if (enabled) requestCoachAnalysis();
+      else {
+        hintMove = null;
+        latestCoach = null;
+        refreshView();
+      }
+    },
+    onBlunderWarnChange(enabled) {
+      blunderWarnEnabled = enabled;
+      persist();
+    },
+    onCoachPanelOpened() {
+      if (!coachEnabled) return;
+      if (latestCoach) pushCoachAdvice();
+      else requestCoachAnalysis();
+    },
+    onHintRevealed(shown, move) {
+      hintMove = shown ? move : null;
+      refreshView();
+    },
   });
 
   setupPicking(
@@ -327,6 +475,9 @@ export function startGame(container: HTMLElement): void {
     difficulty = saved.difficulty;
     ui.setDifficulty(saved.difficulty);
     if (saved.view === '2d' || saved.view === '3d') viewMode = saved.view;
+    coachEnabled = saved.coach === true;
+    blunderWarnEnabled = saved.blunderWarn === true;
+    ui.setCoachSettings(coachEnabled, blunderWarnEnabled);
     for (const move of saved.moves) {
       try {
         game.move(move);
@@ -339,6 +490,7 @@ export function startGame(container: HTMLElement): void {
   setRenderLoopActive = startRenderLoop(sceneRefs);
 
   restoreSavedGame();
+  ui.setCoachSettings(coachEnabled, blunderWarnEnabled);
   rebuildPieceMeshes();
   syncUiAfterMove();
   applyViewMode();

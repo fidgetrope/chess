@@ -3,7 +3,7 @@ import { ChessGame } from '../core/game.ts';
 import type { Color, PieceSymbol } from '../core/types.ts';
 import { coachAnalyse } from './coach.ts';
 import { standingWords } from './evalWords.ts';
-import { analyzePosition, scoreMove } from './minimax.ts';
+import { analyzePosition, isMateScore, scoreMove } from './minimax.ts';
 import { reasonFor } from './moveReason.ts';
 
 type MoveRef = { from: string; to: string; promotion?: PieceSymbol };
@@ -25,7 +25,7 @@ export interface CoachResponse {
   threat: { san: string; from: string; to: string; text: string } | null;
   standing: string | null;
   /** Present only for a 'blunderCheck'. `null` there means "not a blunder". */
-  blunder: { dropCp: number; bestSan: string } | null;
+  blunder: { dropCp: number; bestSan: string; intoMate: boolean } | null;
 }
 
 /**
@@ -43,7 +43,8 @@ self.onmessage = (event: MessageEvent<CoachRequest>) => {
     if (best) {
       const chosenCp = scoreMove(new ChessGame(fen), move, analysis.depth);
       const dropCp = best.scoreCp - chosenCp;
-      if (dropCp > 150) blunder = { dropCp, bestSan: best.move.san };
+      const intoMate = isMateScore(chosenCp) && chosenCp < 0;
+      if (dropCp > 150) blunder = { dropCp, bestSan: best.move.san, intoMate };
     }
     const reply: CoachResponse = {
       requestId,

@@ -21,6 +21,8 @@ export interface SavedGame {
   moves: SavedMove[];
   difficulty: DifficultyLevel;
   view?: ViewMode;
+  coach?: boolean;
+  blunderWarn?: boolean;
   savedAt: number;
 }
 
@@ -28,6 +30,8 @@ export function saveGame(state: {
   moves: SavedMove[];
   difficulty: DifficultyLevel;
   view: ViewMode;
+  coach: boolean;
+  blunderWarn: boolean;
 }): void {
   try {
     const payload: SavedGame = { v: 1, savedAt: Date.now(), ...state };

@@ -23,6 +23,7 @@
           <div id="hud-actions">
             <button id="undo" type="button">Undo</button>
             <button id="moves-toggle" type="button" aria-expanded="false">Moves</button>
+            <button id="coach-toggle" type="button" aria-expanded="false">Coach</button>
             <button id="view-toggle" type="button" title="Switch between the 3D and flat board">2D</button>
             <button id="menu-toggle" type="button" aria-expanded="false" aria-label="Settings">&#9881;</button>
           </div>
@@ -42,6 +43,19 @@
           <ol id="move-list"></ol>
         </div>
 
+        <div id="coach-panel" hidden>
+          <div id="coach-advice">
+            <p id="coach-standing" hidden></p>
+            <p id="coach-threat">Thinking…</p>
+            <button id="coach-hint-btn" type="button">Show a hint</button>
+            <p id="coach-hint" hidden><strong id="coach-hint-move"></strong> <span id="coach-hint-reason"></span></p>
+          </div>
+          <div id="coach-settings">
+            <label><input type="checkbox" id="coach-enabled" /> Coach on</label>
+            <label><input type="checkbox" id="coach-blunder" /> Warn me before a blunder</label>
+          </div>
+        </div>
+
         <div id="promotion-picker" class="hidden">
           <div id="promotion-panel">
             <p>Promote to</p>
@@ -58,6 +72,16 @@
           <div id="game-over-panel">
             <p id="game-over-message"></p>
             <button id="play-again" type="button">Play Again</button>
+          </div>
+        </div>
+
+        <div id="blunder-dialog" class="hidden">
+          <div id="blunder-panel">
+            <p id="blunder-message"></p>
+            <div id="blunder-actions">
+              <button id="blunder-back" type="button">Take it back</button>
+              <button id="blunder-play" type="button">Play it anyway</button>
+            </div>
           </div>
         </div>
       </div>

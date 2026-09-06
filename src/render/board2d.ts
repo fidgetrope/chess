@@ -25,6 +25,8 @@ export interface Board2dState {
   moves: MoveOption[];
   checkSquare: Square | null;
   lastMove: { from: string; to: string } | null;
+  /** The coach's suggested move, when the hint is showing. */
+  hintMove: { from: string; to: string } | null;
 }
 
 export interface Board2dHandle {
@@ -113,6 +115,10 @@ export function createBoard2d(onPick: (square: Square | null) => void): Board2dH
       cell.classList.toggle(
         'last',
         !!state.lastMove && (name === state.lastMove.from || name === state.lastMove.to),
+      );
+      cell.classList.toggle(
+        'hint',
+        !!state.hintMove && (name === state.hintMove.from || name === state.hintMove.to),
       );
     }
   }
