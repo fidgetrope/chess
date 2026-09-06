@@ -305,6 +305,13 @@ function buildKnight(color: Color): THREE.Group {
   return group;
 }
 
+// Profiles are drawn a little squat for stability; stretch each finished
+// piece taller and trim its footprint so it reads more like a real
+// Staunton set. Applied to the whole group, so finials (cross, coronet,
+// merlons, slit) move with the body.
+const PIECE_STRETCH = 1.24;
+const PIECE_SLIM = 0.9;
+
 /** Builds a full piece: a turned body (or the knight mesh) plus any finial detail. */
 export function createPieceMesh(square: Square, piece: Piece): PieceMesh {
   const group = new THREE.Group() as PieceMesh;
@@ -328,6 +335,8 @@ export function createPieceMesh(square: Square, piece: Piece): PieceMesh {
     if (piece.type === 'q') addQueenCoronet(group, material);
     if (piece.type === 'k') addKingCross(group, material);
   }
+
+  group.scale.set(PIECE_SLIM, PIECE_STRETCH, PIECE_SLIM);
 
   const { x, z } = squareToWorld(square.row, square.col);
   group.position.set(x, PIECE_BASE_Y, z);

@@ -1,10 +1,13 @@
 import type { DifficultyLevel } from '../ai/difficulty.ts';
-import type { Color, GameOutcome, PieceSymbol } from '../core/types.ts';
+import type { Color, GameOutcome, PieceSymbol, ViewMode } from '../core/types.ts';
+
+export type { ViewMode };
 
 export interface UiCallbacks {
   onDifficultyChange: (level: DifficultyLevel) => void;
   onUndo: () => void;
   onRestart: () => void;
+  onToggleView: () => void;
 }
 
 export interface UiHandle {
@@ -16,6 +19,8 @@ export interface UiHandle {
   setCaptured: (byYou: PieceSymbol[], byAi: PieceSymbol[]) => void;
   setMoveList: (sanPlies: string[]) => void;
   setUndoEnabled: (enabled: boolean) => void;
+  /** Label the view button with whichever view it switches to. */
+  setViewMode: (mode: ViewMode) => void;
   /** Close the Moves / settings drop-downs (e.g. when the player taps the board). */
   closePanels: () => void;
   /** Resolves with the piece the player chose to promote to. */
@@ -79,6 +84,7 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   const undoButton = requireEl<HTMLButtonElement>('undo');
   const restartButton = requireEl<HTMLButtonElement>('restart');
   const movesToggle = requireEl<HTMLButtonElement>('moves-toggle');
+  const viewToggle = requireEl<HTMLButtonElement>('view-toggle');
   const menuToggle = requireEl<HTMLButtonElement>('menu-toggle');
   const movesPanel = requireEl<HTMLDivElement>('moves-panel');
   const menuPanel = requireEl<HTMLDivElement>('menu-panel');
@@ -128,6 +134,10 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     callbacks.onDifficultyChange(difficultySelect.value as DifficultyLevel);
   });
   undoButton.addEventListener('click', () => callbacks.onUndo());
+  viewToggle.addEventListener('click', () => {
+    closePanels();
+    callbacks.onToggleView();
+  });
   restartButton.addEventListener('click', () => {
     closePanels();
     callbacks.onRestart();
@@ -182,6 +192,10 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     },
     setUndoEnabled(enabled) {
       undoButton.disabled = !enabled;
+    },
+    setViewMode(mode) {
+      viewToggle.textContent = mode === '3d' ? '2D' : '3D';
+      viewToggle.title = mode === '3d' ? 'Switch to the flat board' : 'Switch to the 3D board';
     },
     closePanels,
     askPromotion() {

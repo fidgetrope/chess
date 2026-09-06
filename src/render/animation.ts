@@ -68,8 +68,9 @@ export async function animateCapture(piece: THREE.Object3D, durationMs = 220): P
 
 /** A brief pop as a promoted piece appears in place of the pawn. */
 export async function animatePromotionReveal(piece: THREE.Object3D, durationMs = 260): Promise<void> {
+  const target = piece.scale.clone();
   await animateValue(0, 1, durationMs, (s) => {
-    piece.scale.setScalar(s);
+    piece.scale.set(target.x * s, target.y * s, target.z * s);
   });
-  piece.scale.setScalar(1);
+  piece.scale.copy(target);
 }

@@ -1,5 +1,5 @@
 import type { DifficultyLevel } from '../ai/difficulty.ts';
-import type { PieceSymbol } from './types.ts';
+import type { PieceSymbol, ViewMode } from './types.ts';
 
 // Continuous play: the in-progress game is written to localStorage after
 // every move, so closing the tab and coming back later resumes the exact
@@ -20,10 +20,15 @@ export interface SavedGame {
   v: 1;
   moves: SavedMove[];
   difficulty: DifficultyLevel;
+  view?: ViewMode;
   savedAt: number;
 }
 
-export function saveGame(state: { moves: SavedMove[]; difficulty: DifficultyLevel }): void {
+export function saveGame(state: {
+  moves: SavedMove[];
+  difficulty: DifficultyLevel;
+  view: ViewMode;
+}): void {
   try {
     const payload: SavedGame = { v: 1, savedAt: Date.now(), ...state };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

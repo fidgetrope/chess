@@ -4,6 +4,9 @@
 
 export type Color = 'white' | 'black';
 
+/** Which board presentation is on screen. */
+export type ViewMode = '3d' | '2d';
+
 /** Standard piece letters, matching chess.js: p n b r q k. */
 export type PieceSymbol = 'p' | 'n' | 'b' | 'r' | 'q' | 'k';
 

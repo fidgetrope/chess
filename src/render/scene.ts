@@ -48,7 +48,7 @@ export function createScene(container: HTMLElement): SceneRefs {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   container.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -111,12 +111,22 @@ export function createScene(container: HTMLElement): SceneRefs {
   return { scene, camera, renderer, controls, boardGroup, pieceGroup, highlightGroup };
 }
 
-/** Starts a continuous render loop (also drives OrbitControls damping). */
-export function startRenderLoop(refs: SceneRefs): void {
+/**
+ * Starts a continuous render loop (also drives OrbitControls damping).
+ * Returns a setter to pause it — e.g. while the flat 2D board is showing
+ * and the WebGL canvas is fully covered.
+ */
+export function startRenderLoop(refs: SceneRefs): (active: boolean) => void {
+  let active = true;
   function tick(): void {
-    refs.controls.update();
-    refs.renderer.render(refs.scene, refs.camera);
+    if (active) {
+      refs.controls.update();
+      refs.renderer.render(refs.scene, refs.camera);
+    }
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+  return (next: boolean) => {
+    active = next;
+  };
 }
