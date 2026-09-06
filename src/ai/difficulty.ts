@@ -45,9 +45,9 @@ export const DIFFICULTIES: Record<DifficultyLevel, DifficultyConfig> = {
     mode: 'fixed',
     searchDepth: 3,
     timeBudgetMs: 0,
-    blunderChance: 0.12,
-    randomMoveChance: 0,
-    evalNoise: 45,
+    blunderChance: 0.15,
+    randomMoveChance: 0.05,
+    evalNoise: 50,
   },
   hard: {
     name: 'Hard',
