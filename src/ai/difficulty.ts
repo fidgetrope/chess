@@ -18,12 +18,46 @@ export interface DifficultyConfig {
    * rather than just playing shallower-but-perfect.
    */
   blunderChance: number;
+  /** Probability [0,1] of playing a uniformly random legal move instead of searching. */
+  randomMoveChance: number;
+  /**
+   * Centipawn jitter added to each root move's score when picking (100 ≈ a
+   * pawn). Big enough noise makes the AI drift into inaccuracies; it can
+   * never rescue a move that hangs a whole piece.
+   */
+  evalNoise: number;
 }
 
+// Down-rated Sept 2026: Easy leans hard on eval noise + the odd random
+// move so it plays like a loose casual player rather than a solid engine.
 export const DIFFICULTIES: Record<DifficultyLevel, DifficultyConfig> = {
-  easy: { name: 'Easy', mode: 'fixed', searchDepth: 2, timeBudgetMs: 0, blunderChance: 0.35 },
-  medium: { name: 'Medium', mode: 'fixed', searchDepth: 3, timeBudgetMs: 0, blunderChance: 0.08 },
-  hard: { name: 'Hard', mode: 'iterative', searchDepth: 0, timeBudgetMs: 2000, blunderChance: 0 },
+  easy: {
+    name: 'Easy',
+    mode: 'fixed',
+    searchDepth: 2,
+    timeBudgetMs: 0,
+    blunderChance: 0.4,
+    randomMoveChance: 0.1,
+    evalNoise: 100,
+  },
+  medium: {
+    name: 'Medium',
+    mode: 'fixed',
+    searchDepth: 3,
+    timeBudgetMs: 0,
+    blunderChance: 0.12,
+    randomMoveChance: 0,
+    evalNoise: 45,
+  },
+  hard: {
+    name: 'Hard',
+    mode: 'iterative',
+    searchDepth: 0,
+    timeBudgetMs: 1800,
+    blunderChance: 0,
+    randomMoveChance: 0,
+    evalNoise: 8,
+  },
 };
 
 export interface AiMove {
@@ -45,6 +79,10 @@ export function chooseAiMove(fen: string, config: DifficultyConfig): AiMove | nu
   if (legal.length === 0) return null;
   if (legal.length === 1) return toAiMove(legal[0]);
 
+  if (config.randomMoveChance > 0 && Math.random() < config.randomMoveChance) {
+    return toAiMove(legal[Math.floor(Math.random() * legal.length)]);
+  }
+
   let chosen: MoveOption | null;
 
   if (config.blunderChance > 0 && Math.random() < config.blunderChance) {
@@ -59,8 +97,8 @@ export function chooseAiMove(fen: string, config: DifficultyConfig): AiMove | nu
 function bestMove(game: ChessGame, config: DifficultyConfig): MoveOption | null {
   const result =
     config.mode === 'iterative'
-      ? searchIterativeDeepening(game.clone(), config.timeBudgetMs)
-      : searchFixedDepth(game.clone(), config.searchDepth);
+      ? searchIterativeDeepening(game.clone(), config.timeBudgetMs, config.evalNoise)
+      : searchFixedDepth(game.clone(), config.searchDepth, config.evalNoise);
   return result.move;
 }
 
@@ -84,7 +122,7 @@ function secondBestMove(game: ChessGame, config: DifficultyConfig): MoveOption |
     const child = game.clone();
     child.move({ from: move.from, to: move.to, promotion: move.promotion });
     // Score from the mover's perspective = negated child-to-move score.
-    const score = -searchFixedDepth(child, Math.max(1, depth - 1)).stats.score;
+    const score = -searchFixedDepth(child, Math.max(1, depth - 1), config.evalNoise).stats.score;
     if (score > bestScore) {
       bestScore = score;
       best = move;

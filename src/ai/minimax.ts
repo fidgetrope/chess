@@ -79,18 +79,26 @@ function negamax(
   return best;
 }
 
-/** One fixed-depth search from the root. `aborted` means the time budget ran out mid-search. */
+/**
+ * One fixed-depth search from the root. `aborted` means the time budget
+ * ran out mid-search. `rootNoise`, if set, adds a random centipawn jitter
+ * to each root move's score *for selection only* — pruning and the
+ * returned score stay honest — so a weaker level plays a bit loosely
+ * without ever missing that a move hangs a whole piece.
+ */
 function searchAtDepth(
   game: ChessGame,
   depth: number,
   deadline: number,
   preferred: MoveOption | null,
   stats: SearchStats,
+  rootNoise: number,
 ): { move: MoveOption | null; score: number; aborted: boolean } {
   const moves = orderMoves(game.legalMoves(), preferred);
   let bestMove: MoveOption | null = null;
-  let bestScore = -Infinity;
-  let alpha = -Infinity;
+  let bestScore = -Infinity; // true score of the chosen move (for the caller)
+  let bestPick = -Infinity; // jittered score used only to pick
+  let alpha = -Infinity; // best true score seen, for correct pruning
   const beta = Infinity;
   let aborted = false;
 
@@ -99,11 +107,16 @@ function searchAtDepth(
     const score = -negamax(game, depth - 1, 1, -beta, -alpha, deadline, stats);
     game.undo();
 
-    if (score > bestScore) {
+    // Jitter quiet scores only; a forced mate (for or against) is never
+    // fudged, so the AI still takes the fastest mate and never walks into one.
+    const decisive = Math.abs(score) > MATE_SCORE - 1000;
+    const pick = rootNoise > 0 && !decisive ? score + (Math.random() * 2 - 1) * rootNoise : score;
+    if (pick > bestPick) {
+      bestPick = pick;
       bestScore = score;
       bestMove = move;
     }
-    if (bestScore > alpha) alpha = bestScore;
+    if (score > alpha) alpha = score;
 
     if (Date.now() >= deadline) {
       aborted = true;
@@ -115,9 +128,9 @@ function searchAtDepth(
 }
 
 /** Plain fixed-depth alpha-beta search. Used by Easy / Medium. */
-export function searchFixedDepth(game: ChessGame, depth: number): SearchOutput {
+export function searchFixedDepth(game: ChessGame, depth: number, rootNoise = 0): SearchOutput {
   const stats: SearchStats = { nodes: 0, depth, score: 0 };
-  const result = searchAtDepth(game, depth, Number.POSITIVE_INFINITY, null, stats);
+  const result = searchAtDepth(game, depth, Number.POSITIVE_INFINITY, null, stats, rootNoise);
   stats.score = result.score;
   return { move: result.move, stats };
 }
@@ -131,6 +144,7 @@ export function searchFixedDepth(game: ChessGame, depth: number): SearchOutput {
 export function searchIterativeDeepening(
   game: ChessGame,
   timeBudgetMs: number,
+  rootNoise = 0,
   maxDepth = 64,
 ): SearchOutput {
   const deadline = Date.now() + timeBudgetMs;
@@ -140,7 +154,7 @@ export function searchIterativeDeepening(
   let bestScore = 0;
 
   for (let depth = 1; depth <= maxDepth; depth++) {
-    const result = searchAtDepth(game, depth, deadline, best, stats);
+    const result = searchAtDepth(game, depth, deadline, best, stats, rootNoise);
 
     if (!result.aborted && result.move) {
       best = result.move;

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { chooseAiMove, DIFFICULTIES } from '../src/ai/difficulty.ts';
+import { chooseAiMove, DIFFICULTIES, type DifficultyConfig } from '../src/ai/difficulty.ts';
 import { ChessGame } from '../src/core/game.ts';
 import { evaluate } from '../src/ai/evaluate.ts';
+
+/** A level's search with all the "play worse on purpose" randomness stripped out. */
+function deterministic(config: DifficultyConfig): DifficultyConfig {
+  return { ...config, blunderChance: 0, randomMoveChance: 0, evalNoise: 0 };
+}
 
 describe('chooseAiMove', () => {
   it('returns a legal move at every difficulty from the opening position', () => {
@@ -23,18 +28,18 @@ describe('chooseAiMove', () => {
     expect(chooseAiMove(fen, DIFFICULTIES.hard)).toBeNull();
   });
 
-  it('on Hard, plays the mate-in-one (Scholar\'s mate)', () => {
+  it('finds the mate-in-one at Hard depth (Scholar\'s mate)', () => {
     const fen = 'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4';
-    const move = chooseAiMove(fen, DIFFICULTIES.hard);
+    const move = chooseAiMove(fen, deterministic(DIFFICULTIES.hard));
     expect(move).not.toBeNull();
     expect(move!.from).toBe('h5');
     expect(move!.to).toBe('f7');
   });
 
-  it('on Medium, grabs a hanging queen', () => {
+  it('grabs a hanging queen at Medium depth', () => {
     // Black to move: ...Qxd5 wins the undefended White queen.
     const fen = '4k3/8/2q5/3Q4/8/8/8/4K3 b - - 0 1';
-    const move = chooseAiMove(fen, DIFFICULTIES.medium);
+    const move = chooseAiMove(fen, deterministic(DIFFICULTIES.medium));
     expect(move).not.toBeNull();
     expect(move!.to).toBe('d5');
   });
