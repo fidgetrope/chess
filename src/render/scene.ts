@@ -21,15 +21,18 @@ export function createScene(container: HTMLElement): SceneRefs {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x14100c);
 
-  const camera = new THREE.PerspectiveCamera(
-    45,
-    container.clientWidth / container.clientHeight,
-    0.1,
-    100,
-  );
-  // On the -z side, looking toward +z: White (rows 0-2, negative z) sits in
-  // the foreground nearest the camera, Black across the board on the far side.
-  camera.position.set(0, 8.5, -9);
+  const aspect = container.clientWidth / container.clientHeight;
+  const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 100);
+
+  // Camera sits on the -z side looking toward +z, so White (negative z) is in
+  // the foreground and Black is across the board. `framingDistance` pulls it
+  // back on narrow / portrait viewports (phones) so the whole board still
+  // fits horizontally; on landscape it uses the base distance.
+  const VIEW_DIR = new THREE.Vector3(0, 0.92, -1).normalize();
+  function framingDistance(a: number): number {
+    return a < 1 ? 13 / Math.max(a, 0.5) : 13;
+  }
+  camera.position.copy(VIEW_DIR).multiplyScalar(framingDistance(aspect));
   camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -44,7 +47,7 @@ export function createScene(container: HTMLElement): SceneRefs {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 7;
-  controls.maxDistance = 20;
+  controls.maxDistance = 26;
   controls.maxPolarAngle = Math.PI / 2 - 0.05; // never dip below the board
   controls.enablePan = false;
 
@@ -78,9 +81,18 @@ export function createScene(container: HTMLElement): SceneRefs {
 
   function handleResize(): void {
     const { clientWidth, clientHeight } = container;
-    camera.aspect = clientWidth / clientHeight;
+    const nextAspect = clientWidth / clientHeight;
+    camera.aspect = nextAspect;
     camera.updateProjectionMatrix();
     renderer.setSize(clientWidth, clientHeight);
+
+    // On a shift to a narrower viewport (e.g. phone rotated to portrait),
+    // pull back far enough that the board fits again — but only ever zoom
+    // out, never override a closer view the player chose.
+    const needed = framingDistance(nextAspect);
+    if (camera.position.length() < needed - 0.01) {
+      camera.position.copy(VIEW_DIR).multiplyScalar(needed);
+    }
   }
   window.addEventListener('resize', handleResize);
 
