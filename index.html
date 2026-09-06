@@ -11,28 +11,33 @@
       <div id="scene-container"></div>
 
       <div id="ui">
-        <div id="top-bar">
-          <div id="status-block">
+        <div id="hud">
+          <div id="hud-left">
             <div id="turn-indicator">Your turn</div>
             <div id="check-banner" class="hidden">Check</div>
+            <div id="captured-tray" hidden>
+              <span class="cap-side"><span class="cap-tag">You</span><span id="captured-by-you" class="captured-pieces"></span></span>
+              <span class="cap-side"><span class="cap-tag">AI</span><span id="captured-by-ai" class="captured-pieces"></span></span>
+            </div>
+          </div>
+          <div id="hud-actions">
+            <button id="undo" type="button">Undo</button>
+            <button id="moves-toggle" type="button" aria-expanded="false">Moves</button>
+            <button id="menu-toggle" type="button" aria-expanded="false" aria-label="Settings">&#9881;</button>
           </div>
         </div>
 
-        <div id="side-panel">
-          <div id="controls">
-            <label for="difficulty">Difficulty</label>
-            <select id="difficulty">
-              <option value="easy">Easy</option>
-              <option value="medium" selected>Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-            <button id="undo" type="button">Undo</button>
-            <button id="restart" type="button">Restart</button>
-          </div>
-          <div id="captured-tray">
-            <div id="captured-by-you" class="captured-row"><span class="captured-label">You took</span><span class="captured-pieces"></span></div>
-            <div id="captured-by-ai" class="captured-row"><span class="captured-label">AI took</span><span class="captured-pieces"></span></div>
-          </div>
+        <div id="menu-panel" hidden>
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+          <button id="restart" type="button">Restart</button>
+        </div>
+
+        <div id="moves-panel" hidden>
           <ol id="move-list"></ol>
         </div>
 

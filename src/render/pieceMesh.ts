@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
 import type { Color, Piece, PieceSymbol, Square } from '../core/types.ts';
 import { PIECE_BASE_Y, squareToWorld } from './coords.ts';
 
@@ -105,14 +106,18 @@ function rookProfile(): THREE.Vector2[] {
 function bishopProfile(): THREE.Vector2[] {
   return [
     ...baseProfile(),
-    v(0.16, 0.42),
-    v(0.24, 0.46),
-    v(0.24, 0.5),
-    v(0.13, 0.54),
-    v(0.11, 0.58),
-    ...arc(0, 0.86, 0.19, -Math.PI / 2, Math.PI / 2.6, 12), // pear-shaped head
-    v(0.06, 1.0),
-    ...arc(0, 1.08, 0.07, -Math.PI / 2, Math.PI / 2, 8), // finial bead
+    v(0.15, 0.4),
+    v(0.23, 0.44),
+    v(0.23, 0.48),
+    v(0.12, 0.52),
+    v(0.11, 0.56),
+    // Tapered mitre: swells just above the collar, then narrows to a point.
+    v(0.2, 0.63),
+    v(0.19, 0.73),
+    v(0.15, 0.87),
+    v(0.09, 0.99),
+    v(0.05, 1.06),
+    ...arc(0, 1.11, 0.055, -Math.PI / 2, Math.PI / 2, 8), // small round finial
   ];
 }
 
@@ -154,10 +159,11 @@ function kingProfile(): THREE.Vector2[] {
   ];
 }
 
-const PROFILES: Record<Exclude<PieceSymbol, 'n'>, () => THREE.Vector2[]> = {
+// The knight is a mesh, the bishop is turned-then-booleaned; the rest are
+// plain turned profiles.
+const LATHE_PROFILES: Record<'p' | 'r' | 'q' | 'k', () => THREE.Vector2[]> = {
   p: pawnProfile,
   r: rookProfile,
-  b: bishopProfile,
   q: queenProfile,
   k: kingProfile,
 };
@@ -181,6 +187,33 @@ function addRookMerlons(group: THREE.Group, material: THREE.Material): void {
     block.castShadow = true;
     group.add(block);
   }
+}
+
+// The bishop's mitre is turned like the other pieces, then a thin wedge is
+// booleaned out of the top third for the traditional diagonal saw-cut. The
+// result is a real gap in the geometry (its inner faces catch light like
+// the rest of the piece), not a dark decal. Computed once and shared by
+// every bishop, since the cut doesn't depend on colour.
+let bishopGeometryCache: THREE.BufferGeometry | null = null;
+
+function bishopGeometry(): THREE.BufferGeometry {
+  if (bishopGeometryCache) return bishopGeometryCache;
+
+  const evaluator = new Evaluator();
+  evaluator.useGroups = false;
+
+  const head = new Brush(new THREE.LatheGeometry(bishopProfile(), REVOLVE_SEGMENTS));
+  head.updateMatrixWorld();
+
+  const cut = new Brush(new THREE.BoxGeometry(0.7, 0.055, 0.7));
+  cut.position.set(0, 0.86, 0);
+  cut.rotation.x = -Math.PI * 0.2;
+  cut.updateMatrixWorld();
+
+  const result = evaluator.evaluate(head, cut, SUBTRACTION);
+  result.geometry.computeVertexNormals();
+  bishopGeometryCache = result.geometry;
+  return bishopGeometryCache;
 }
 
 /** A ring of small spikes topped with beads — the queen's coronet. */
@@ -283,8 +316,13 @@ export function createPieceMesh(square: Square, piece: Piece): PieceMesh {
     // face down the board at the opponent (White toward +z, Black toward -z).
     knight.rotation.y = piece.color === 'white' ? -Math.PI / 2 : Math.PI / 2;
     group.add(knight);
+  } else if (piece.type === 'b') {
+    const body = new THREE.Mesh(bishopGeometry(), material);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
   } else {
-    const body = latheMesh(PROFILES[piece.type](), material);
+    const body = latheMesh(LATHE_PROFILES[piece.type](), material);
     group.add(body);
     if (piece.type === 'r') addRookMerlons(group, material);
     if (piece.type === 'q') addQueenCoronet(group, material);

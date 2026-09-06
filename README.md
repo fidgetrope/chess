@@ -10,8 +10,8 @@ A browser-based chess game with a 3D perspective board and an AI opponent with s
   - **Medium** — depth-3 alpha-beta search
   - **Hard** — iterative deepening within a ~2-second time budget, so it stays responsive on any machine
   - All three use material + piece-square-table evaluation and run in a Web Worker, off the main thread
-- 3D board rendered with Three.js — turned (lathe) piece geometry for a Staunton-style set in ivory and walnut, tilted perspective camera, orbit/zoom controls, click-or-tap-to-move, move / capture / castling / promotion animations
-- Move history panel (SAN), captured-piece tray, turn indicator, check banner, undo, restart
+- 3D board rendered with Three.js — turned (lathe) piece geometry for a Staunton-style set in ivory and walnut (the bishop's mitre slit is a real boolean cut via `three-bvh-csg`), tilted perspective camera, orbit/zoom controls, click-or-tap-to-move, move / capture / castling / promotion animations
+- Minimal HUD that keeps the board clear: a turn pill and a compact captured-piece strip, with move history (SAN) and difficulty / restart tucked behind the "Moves" and ⚙ buttons; plus check banner and undo
 - Continuous play — the in-progress game is saved to the browser's local storage after every move, so closing the tab and coming back later resumes the exact position
 
 ## Tech stack
