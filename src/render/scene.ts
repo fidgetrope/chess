@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { buildEnvironment } from './environment.ts';
 
 export interface SceneRefs {
   scene: THREE.Scene;
@@ -19,21 +20,29 @@ export interface SceneRefs {
  */
 export function createScene(container: HTMLElement): SceneRefs {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x4a3d2e);
+  // Background colour + fog are set by buildEnvironment (the cosy study).
 
   const aspect = container.clientWidth / container.clientHeight;
-  const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 100);
 
   // Camera sits on the -z side looking toward +z, so White (negative z) is in
-  // the foreground and Black is across the board. `framingDistance` pulls it
-  // back on narrow / portrait viewports (phones) so the whole board still
-  // fits horizontally; on landscape it uses the base distance.
-  const VIEW_DIR = new THREE.Vector3(0, 0.92, -1).normalize();
-  function framingDistance(a: number): number {
-    return a < 1 ? 13 / Math.max(a, 0.5) : 13;
+  // the foreground and Black is across the board. Look a little less steeply
+  // than a plan view and aim slightly above the board centre so the cosy
+  // study behind it comes into frame. On narrow / portrait viewports the
+  // lens widens and the camera pulls back so the whole board still fits.
+  const TARGET = new THREE.Vector3(0, 1, 0);
+  const VIEW_DIR = new THREE.Vector3(0, 0.78, -1).normalize();
+
+  function framing(a: number): { distance: number; fov: number } {
+    if (a >= 1) return { distance: 13.5, fov: 45 };
+    const fov = Math.min(58, 45 + (1 - a) * 24);
+    const widen = Math.tan((45 * Math.PI) / 360) / Math.tan((fov * Math.PI) / 360);
+    return { distance: (14.8 / Math.max(a, 0.5)) * widen, fov };
   }
-  camera.position.copy(VIEW_DIR).multiplyScalar(framingDistance(aspect));
-  camera.lookAt(0, 0, 0);
+
+  const initial = framing(aspect);
+  const camera = new THREE.PerspectiveCamera(initial.fov, aspect, 0.1, 100);
+  camera.position.copy(VIEW_DIR).multiplyScalar(initial.distance).add(TARGET);
+  camera.lookAt(TARGET);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -43,7 +52,7 @@ export function createScene(container: HTMLElement): SceneRefs {
   container.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0, 0);
+  controls.target.copy(TARGET);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 7;
@@ -51,7 +60,7 @@ export function createScene(container: HTMLElement): SceneRefs {
   controls.maxPolarAngle = Math.PI / 2 - 0.05; // never dip below the board
   controls.enablePan = false;
 
-  const hemiLight = new THREE.HemisphereLight(0xfff2e0, 0x2a2018, 0.55);
+  const hemiLight = new THREE.HemisphereLight(0xffe9cf, 0x241a12, 0.5);
   scene.add(hemiLight);
 
   const keyLight = new THREE.DirectionalLight(0xfff4e2, 1.7);
@@ -71,8 +80,10 @@ export function createScene(container: HTMLElement): SceneRefs {
   fillLight.position.set(-8, 6, 6);
   scene.add(fillLight);
 
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.18);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.12);
   scene.add(ambientLight);
+
+  buildEnvironment(scene);
 
   const boardGroup = new THREE.Group();
   const pieceGroup = new THREE.Group();
@@ -82,16 +93,17 @@ export function createScene(container: HTMLElement): SceneRefs {
   function handleResize(): void {
     const { clientWidth, clientHeight } = container;
     const nextAspect = clientWidth / clientHeight;
+    const fit = framing(nextAspect);
     camera.aspect = nextAspect;
+    camera.fov = fit.fov;
     camera.updateProjectionMatrix();
     renderer.setSize(clientWidth, clientHeight);
 
     // On a shift to a narrower viewport (e.g. phone rotated to portrait),
     // pull back far enough that the board fits again — but only ever zoom
     // out, never override a closer view the player chose.
-    const needed = framingDistance(nextAspect);
-    if (camera.position.length() < needed - 0.01) {
-      camera.position.copy(VIEW_DIR).multiplyScalar(needed);
+    if (camera.position.distanceTo(TARGET) < fit.distance - 0.01) {
+      camera.position.copy(VIEW_DIR).multiplyScalar(fit.distance).add(TARGET);
     }
   }
   window.addEventListener('resize', handleResize);
