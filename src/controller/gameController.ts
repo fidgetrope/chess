@@ -3,6 +3,7 @@ import AiWorker from '../ai/worker.ts?worker';
 import type { AiRequest, AiResponse } from '../ai/worker.ts';
 import type { DifficultyLevel } from '../ai/difficulty.ts';
 import { ChessGame, squareToGrid } from '../core/game.ts';
+import { loadGame, saveGame } from '../core/persistence.ts';
 import type { Color, MoveOption, PieceSymbol, Square } from '../core/types.ts';
 import { animateCapture, animateMove, animatePromotionReveal } from '../render/animation.ts';
 import { buildBoardMeshes, type TileMesh } from '../render/boardMesh.ts';
@@ -86,12 +87,22 @@ export function startGame(container: HTMLElement): void {
     ui.setCheck(game.inCheck());
   }
 
+  function persist(): void {
+    saveGame({
+      moves: game
+        .detailedHistory()
+        .map((m) => ({ from: m.from, to: m.to, promotion: m.promotion })),
+      difficulty,
+    });
+  }
+
   function syncUiAfterMove(): void {
     ui.setMoveList(game.history());
     updateCapturedUi();
     ui.setUndoEnabled(!busy && game.plyCount() > 0 && game.turn === HUMAN_COLOR);
     updateStatusUi();
     refreshHighlights();
+    persist();
   }
 
   function clearSelection(): void {
@@ -269,8 +280,28 @@ export function startGame(container: HTMLElement): void {
     (square) => void handlePick(square),
   );
 
+  /** Replay a stored game so play resumes exactly where it was left off. */
+  function restoreSavedGame(): void {
+    const saved = loadGame();
+    if (!saved) return;
+    difficulty = saved.difficulty;
+    ui.setDifficulty(saved.difficulty);
+    for (const move of saved.moves) {
+      try {
+        game.move(move);
+      } catch {
+        break; // corrupt tail — keep whatever replayed cleanly
+      }
+    }
+  }
+
+  restoreSavedGame();
   rebuildPieceMeshes();
   syncUiAfterMove();
   startRenderLoop(sceneRefs);
-  ui.setUndoEnabled(false);
+
+  // If the tab was closed on the AI's turn, let it move now.
+  if (game.outcome().type === 'in-progress' && game.turn === AI_COLOR) {
+    requestAiMove();
+  }
 }

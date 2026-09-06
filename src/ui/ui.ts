@@ -10,6 +10,8 @@ export interface UiCallbacks {
 export interface UiHandle {
   setTurn: (text: string) => void;
   setCheck: (visible: boolean) => void;
+  /** Sync the difficulty <select> to a value (e.g. a restored saved game). */
+  setDifficulty: (level: DifficultyLevel) => void;
   /** `byYou` = pieces the human captured (Black men); `byAi` = White men. */
   setCaptured: (byYou: PieceSymbol[], byAi: PieceSymbol[]) => void;
   setMoveList: (sanPlies: string[]) => void;
@@ -101,6 +103,9 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     },
     setCheck(visible) {
       checkBanner.classList.toggle('hidden', !visible);
+    },
+    setDifficulty(level) {
+      difficultySelect.value = level;
     },
     setCaptured(byYou, byAi) {
       renderCaptured(capturedByYou, byYou, 'black');

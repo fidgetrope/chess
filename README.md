@@ -12,6 +12,7 @@ A browser-based chess game with a 3D perspective board and an AI opponent with s
   - All three use material + piece-square-table evaluation and run in a Web Worker, off the main thread
 - 3D board rendered with Three.js — turned (lathe) piece geometry for a Staunton-style set in ivory and walnut, tilted perspective camera, orbit/zoom controls, click-or-tap-to-move, move / capture / castling / promotion animations
 - Move history panel (SAN), captured-piece tray, turn indicator, check banner, undo, restart
+- Continuous play — the in-progress game is saved to the browser's local storage after every move, so closing the tab and coming back later resumes the exact position
 
 ## Tech stack
 
@@ -47,7 +48,7 @@ npm run preview     # preview the production build locally
 
 ```
 src/
-  core/        chess.js wrapper: game state, moves, check/mate/draw detection, grid <-> algebraic
+  core/        chess.js wrapper + localStorage persistence: game state, moves, check/mate/draw detection
   ai/          minimax + alpha-beta, evaluation, difficulty presets, Web Worker entry point
   render/      Three.js scene, board/piece meshes (lathe profiles + knight), picking, highlights, animation
   ui/          plain HTML/CSS overlay (difficulty select, move list, captured tray, promotion picker, banners)
@@ -57,8 +58,12 @@ tests/         Vitest unit tests (rules wrapper, AI move legality, mate-in-1, ev
 
 ## Deployment
 
-Intended for [Vercel](https://vercel.com/) (auto-detects Vite): import the repo and deploy; every push to the
-default branch rebuilds and redeploys.
+Hosted on **GitHub Pages** at https://fidgetrope.github.io/chess/ . The
+[`Deploy to GitHub Pages`](.github/workflows/deploy.yml) workflow runs on every push to `main`: it runs the
+test suite, builds with Vite, and publishes `dist/`. `vite.config.ts` sets `base: '/chess/'` so asset URLs
+resolve under the project-pages path.
+
+To update: commit and `git push` — the workflow redeploys automatically.
 
 ## Licensing
 
