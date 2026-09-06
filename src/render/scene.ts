@@ -19,7 +19,7 @@ export interface SceneRefs {
  */
 export function createScene(container: HTMLElement): SceneRefs {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x14100c);
+  scene.background = new THREE.Color(0x271f17);
 
   const aspect = container.clientWidth / container.clientHeight;
   const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 100);
