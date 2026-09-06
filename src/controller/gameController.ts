@@ -23,7 +23,7 @@ export function startGame(container: HTMLElement): void {
   const tiles: TileMesh[] = buildBoardMeshes(sceneRefs.boardGroup);
 
   let game = new ChessGame();
-  let difficulty: DifficultyLevel = 'medium';
+  let difficulty: DifficultyLevel = 'easy';
   let selected: Square | null = null;
   let legalFromSelected: MoveOption[] = [];
   let busy = false; // true while animating or waiting on the AI
