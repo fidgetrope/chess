@@ -149,6 +149,40 @@ body {
   border-color: #6b4a34;
 }
 
+/* Keep the HUD to a single row on phones: the turn pill gives way, the
+   action buttons stay together and just tighten up. */
+@media (max-width: 480px) {
+  #hud {
+    padding: 6px;
+    gap: 6px;
+  }
+  #hud-left {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  #turn-indicator {
+    font-size: 0.8rem;
+    padding: 5px 9px;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #hud-actions {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+    gap: 4px;
+  }
+  #hud-actions button {
+    font-size: 0.72rem;
+    padding: 5px 7px;
+  }
+  #menu-toggle {
+    font-size: 0.85rem;
+    padding: 5px 7px;
+  }
+}
+
 /* ---- Drop-down panels ---- */
 #menu-panel,
 #moves-panel,
