@@ -3,7 +3,7 @@ import { ChessGame } from '../core/game.ts';
 import type { Color, PieceSymbol } from '../core/types.ts';
 import { coachAnalyse } from './coach.ts';
 import { standingWords } from './evalWords.ts';
-import { analyzePosition, isMateScore, scoreMove } from './minimax.ts';
+import { analyzePosition, isMateScore, materialLossAfter, scoreMove } from './minimax.ts';
 import { reasonFor } from './moveReason.ts';
 
 type MoveRef = { from: string; to: string; promotion?: PieceSymbol };
@@ -37,14 +37,24 @@ self.onmessage = (event: MessageEvent<CoachRequest>) => {
   const { requestId, fen, humanColor, mode, move } = event.data;
 
   if (mode === 'blunderCheck' && move) {
-    const analysis = analyzePosition(new ChessGame(fen), { maxDepth: 4, timeBudgetMs: 650 });
+    const analysis = analyzePosition(new ChessGame(fen), { maxDepth: 4, timeBudgetMs: 550 });
     const best = analysis.moves[0];
     let blunder: CoachResponse['blunder'] = null;
-    if (best) {
+    const isBest =
+      !!best &&
+      best.move.from === move.from &&
+      best.move.to === move.to &&
+      best.move.promotion === move.promotion;
+    if (best && !isBest) {
+      // Only warn about *concrete* losses: material that a forcing capture
+      // sequence wins, or walking into a forced mate. A move the shallow
+      // positional eval merely dislikes is not a blunder.
+      const lossCp = materialLossAfter(new ChessGame(fen), move);
       const chosenCp = scoreMove(new ChessGame(fen), move, analysis.depth);
-      const dropCp = best.scoreCp - chosenCp;
       const intoMate = isMateScore(chosenCp) && chosenCp < 0;
-      if (dropCp > 150) blunder = { dropCp, bestSan: best.move.san, intoMate };
+      if (intoMate || lossCp >= 200) {
+        blunder = { dropCp: lossCp, bestSan: best.move.san, intoMate };
+      }
     }
     const reply: CoachResponse = {
       requestId,

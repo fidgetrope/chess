@@ -12,6 +12,9 @@ export function isMateScore(cp: number): boolean {
 
 const CAPTURE_VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
+/** Material worth in centipawns — used by the blunder guard's material check. */
+const MATERIAL_CP: Record<PieceSymbol, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+
 export interface SearchStats {
   nodes: number;
   depth: number;
@@ -259,4 +262,93 @@ export function analyzePosition(
   }
 
   return { scoreCp: scored[0]?.scoreCp ?? evalCp, moves: scored, depth };
+}
+
+// ---------------------------------------------------------------------------
+// Material-only lookahead — used by the blunder guard so it warns about
+// moves that concretely lose material, not moves the shallow positional
+// eval merely dislikes.
+// ---------------------------------------------------------------------------
+
+/** Pawn-unit material balance from the side-to-move's point of view. */
+function materialBalance(game: ChessGame): number {
+  let white = 0;
+  for (const rowCells of game.board()) {
+    for (const piece of rowCells) {
+      if (!piece || piece.type === 'k') continue;
+      white += (piece.color === 'white' ? 1 : -1) * MATERIAL_CP[piece.type];
+    }
+  }
+  return white * (game.turn === 'white' ? 1 : -1);
+}
+
+/**
+ * Quiescence search over captures and promotions only (plus every reply
+ * when in check): plays every forcing capture sequence to its end and
+ * returns the resulting material score for the side to move. Because it
+ * scores leaves by material alone, it answers "after the dust settles, who
+ * is up material?" without the positional jitter a shallow full search
+ * carries. Capture chains are short, so this terminates quickly; `ply` caps
+ * the rare pathological line.
+ */
+function quiesceMaterial(
+  game: ChessGame,
+  alpha: number,
+  beta: number,
+  ply: number,
+  stats: SearchStats,
+): number {
+  stats.nodes++;
+
+  if (game.isGameOver()) {
+    // Checkmate: the side to move has lost outright — worse than any
+    // material deficit, so the caller never reads this as "we lost material".
+    if (game.outcome().type === 'checkmate') return -MATE_SCORE;
+    return 0; // any draw: material is moot
+  }
+
+  const inCheck = game.inCheck();
+  if (!inCheck) {
+    const standPat = materialBalance(game); // option to make no capture at all
+    if (standPat >= beta) return beta;
+    if (standPat > alpha) alpha = standPat;
+    if (ply >= 8) return alpha;
+  } else if (ply >= 8) {
+    return materialBalance(game);
+  }
+
+  const moves = orderMoves(
+    inCheck ? game.legalMoves() : game.legalMoves().filter((m) => m.isCapture || m.isPromotion),
+  );
+  if (moves.length === 0) return inCheck ? materialBalance(game) : alpha;
+
+  for (const move of moves) {
+    game.move({ from: move.from, to: move.to, promotion: move.promotion });
+    const score = -quiesceMaterial(game, -beta, -alpha, ply + 1, stats);
+    game.undo();
+    if (score >= beta) return beta;
+    if (score > alpha) alpha = score;
+  }
+  return alpha;
+}
+
+/**
+ * How much material (centipawns, ≥ 0) the side to move concretely loses by
+ * playing `move` — i.e. the drop in their material balance once every
+ * forcing capture sequence that follows has been played out. A safe
+ * developing move returns ~0; hanging a knight returns ~320; a bad trade
+ * returns the difference. Negative results (the move *wins* material) are
+ * clamped to 0.
+ */
+export function materialLossAfter(
+  game: ChessGame,
+  move: { from: string; to: string; promotion?: PieceSymbol },
+): number {
+  const before = materialBalance(game); // our balance, before the move
+  game.move(move);
+  const stats: SearchStats = { nodes: 0, depth: 0, score: 0 };
+  const opponentBalance = quiesceMaterial(game, -Infinity, Infinity, 0, stats);
+  game.undo();
+  const afterForUs = -opponentBalance; // flip back to our point of view
+  return Math.max(0, before - afterForUs);
 }

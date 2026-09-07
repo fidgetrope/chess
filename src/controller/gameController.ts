@@ -164,9 +164,8 @@ export function startGame(container: HTMLElement): void {
 
   function blunderPhrase(verdict: NonNullable<CoachResponse['blunder']>): string {
     if (verdict.intoMate) return 'walks into a forced mate';
-    if (verdict.dropCp >= 650) return 'looks like it drops a piece';
-    if (verdict.dropCp >= 300) return 'looks like it loses material';
-    return 'looks like a mistake';
+    if (verdict.dropCp >= 300) return 'looks like it drops a piece';
+    return 'looks like it loses material';
   }
 
   /** Returns false only when the coach flags a blunder and the player chooses to take it back. */
