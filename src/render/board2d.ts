@@ -27,6 +27,8 @@ export interface Board2dState {
   lastMove: { from: string; to: string } | null;
   /** The coach's suggested move, when the hint is showing. */
   hintMove: { from: string; to: string } | null;
+  /** A square the player just tried to move to illegally — flashed in red. */
+  rejectedSquare: Square | null;
 }
 
 export interface Board2dHandle {
@@ -99,6 +101,8 @@ export function createBoard2d(onPick: (square: Square | null) => void): Board2dH
     const moveTargets = new Map(state.moves.map((m) => [m.to, m]));
     const selectedName = state.selected && squareName(state.selected.row, state.selected.col);
     const checkName = state.checkSquare && squareName(state.checkSquare.row, state.checkSquare.col);
+    const rejectedName =
+      state.rejectedSquare && squareName(state.rejectedSquare.row, state.rejectedSquare.col);
 
     for (const [name, cell] of squares) {
       const { row, col } = squareToGrid(name);
@@ -120,6 +124,7 @@ export function createBoard2d(onPick: (square: Square | null) => void): Board2dH
         'hint',
         !!state.hintMove && (name === state.hintMove.from || name === state.hintMove.to),
       );
+      cell.classList.toggle('rejected', name === rejectedName);
     }
   }
 

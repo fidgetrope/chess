@@ -31,6 +31,11 @@ export function startGame(container: HTMLElement): void {
   let selected: Square | null = null;
   let legalFromSelected: MoveOption[] = [];
   let busy = false; // true while animating or waiting on the AI
+
+  // Rules helper (opt-out): explain why a tapped move isn't legal.
+  let explainMovesEnabled = true;
+  let rejectedSquare: Square | null = null;
+  let rulesNoteTimer: number | null = null;
   let aiRequestId = 0;
   let pendingAi: { requestId: number; startedAt: number } | null = null;
   let setRenderLoopActive: (active: boolean) => void = () => {};
@@ -95,6 +100,7 @@ export function startGame(container: HTMLElement): void {
         moves: legalFromSelected,
         checkSquare,
         hintMove,
+        rejectedSquare,
       });
     } else {
       board2d.render({
@@ -104,8 +110,44 @@ export function startGame(container: HTMLElement): void {
         checkSquare,
         lastMove: lastMovePair(),
         hintMove,
+        rejectedSquare,
       });
     }
+  }
+
+  // ---- Rules helper --------------------------------------------------------
+
+  function clearRulesNote(): void {
+    if (rulesNoteTimer !== null) {
+      clearTimeout(rulesNoteTimer);
+      rulesNoteTimer = null;
+    }
+    ui.setRulesNote(null);
+    if (rejectedSquare) {
+      rejectedSquare = null;
+      refreshView();
+    }
+  }
+
+  function showRulesNote(reason: string): void {
+    ui.setRulesNote(reason);
+    if (rulesNoteTimer !== null) clearTimeout(rulesNoteTimer);
+    rulesNoteTimer = window.setTimeout(() => {
+      rulesNoteTimer = null;
+      ui.setRulesNote(null);
+      rejectedSquare = null;
+      refreshView();
+    }, 4500);
+  }
+
+  /** Show why the tapped square isn't a legal destination. Returns whether a note was shown. */
+  function explainRejectedMove(from: Square, to: Square): boolean {
+    const reason = game.explainIllegalMove(squareKey(from), squareKey(to));
+    if (!reason) return false;
+    rejectedSquare = to;
+    showRulesNote(reason);
+    refreshView();
+    return true;
   }
 
   // ---- Coach ----------------------------------------------------------------
@@ -231,11 +273,13 @@ export function startGame(container: HTMLElement): void {
       view: viewMode,
       coach: coachEnabled,
       blunderWarn: blunderWarnEnabled,
+      explainMoves: explainMovesEnabled,
     });
   }
 
   /** Swap the on-screen board, pausing the WebGL loop while the flat board covers it. */
   function applyViewMode(): void {
+    clearRulesNote();
     board2d.setVisible(viewMode === '2d');
     setRenderLoopActive(viewMode === '3d');
     ui.setViewMode(viewMode);
@@ -250,6 +294,7 @@ export function startGame(container: HTMLElement): void {
   }
 
   function syncUiAfterMove(): void {
+    clearRulesNote();
     ui.setMoveList(game.history());
     updateCapturedUi();
     ui.setUndoEnabled(!busy && game.plyCount() > 0 && game.turn === HUMAN_COLOR);
@@ -359,6 +404,7 @@ export function startGame(container: HTMLElement): void {
   };
 
   async function handlePick(square: Square | null): Promise<void> {
+    clearRulesNote();
     if (busy || game.outcome().type !== 'in-progress' || game.turn !== HUMAN_COLOR) return;
     if (!square) {
       clearSelection();
@@ -386,12 +432,27 @@ export function startGame(container: HTMLElement): void {
     if (piece && piece.color === HUMAN_COLOR) {
       const moves = game.legalMovesFrom(square);
       if (moves.length === 0) {
+        const reason = explainMovesEnabled ? game.explainNoMoves(squareKey(square)) : null;
+        if (reason) {
+          selected = square; // show it picked, with no options, alongside the note
+          legalFromSelected = [];
+          showRulesNote(reason);
+          refreshView();
+          return;
+        }
         clearSelection();
         return;
       }
       selected = square;
       legalFromSelected = moves;
       refreshView();
+      return;
+    }
+
+    // A piece is up and the player tapped an empty square or an enemy piece
+    // that isn't a legal target: say why, and keep the selection so they can
+    // try elsewhere.
+    if (selected && explainMovesEnabled && explainRejectedMove(selected, square)) {
       return;
     }
 
@@ -436,7 +497,7 @@ export function startGame(container: HTMLElement): void {
     },
     onCoachEnabledChange(enabled) {
       coachEnabled = enabled;
-      ui.setCoachSettings(coachEnabled, blunderWarnEnabled);
+      ui.setCoachSettings(coachEnabled, blunderWarnEnabled, explainMovesEnabled);
       persist();
       if (enabled) requestCoachAnalysis();
       else {
@@ -447,6 +508,11 @@ export function startGame(container: HTMLElement): void {
     },
     onBlunderWarnChange(enabled) {
       blunderWarnEnabled = enabled;
+      persist();
+    },
+    onExplainMovesChange(enabled) {
+      explainMovesEnabled = enabled;
+      if (!enabled) clearRulesNote();
       persist();
     },
     onCoachPanelOpened() {
@@ -476,7 +542,8 @@ export function startGame(container: HTMLElement): void {
     if (saved.view === '2d' || saved.view === '3d') viewMode = saved.view;
     coachEnabled = saved.coach === true;
     blunderWarnEnabled = saved.blunderWarn === true;
-    ui.setCoachSettings(coachEnabled, blunderWarnEnabled);
+    explainMovesEnabled = saved.explainMoves !== false; // absent → on
+    ui.setCoachSettings(coachEnabled, blunderWarnEnabled, explainMovesEnabled);
     for (const move of saved.moves) {
       try {
         game.move(move);
@@ -489,7 +556,7 @@ export function startGame(container: HTMLElement): void {
   setRenderLoopActive = startRenderLoop(sceneRefs);
 
   restoreSavedGame();
-  ui.setCoachSettings(coachEnabled, blunderWarnEnabled);
+  ui.setCoachSettings(coachEnabled, blunderWarnEnabled, explainMovesEnabled);
   rebuildPieceMeshes();
   syncUiAfterMove();
   applyViewMode();

@@ -19,6 +19,7 @@ export interface UiCallbacks {
   onToggleView: () => void;
   onCoachEnabledChange: (enabled: boolean) => void;
   onBlunderWarnChange: (enabled: boolean) => void;
+  onExplainMovesChange: (enabled: boolean) => void;
   /** Fired when the coach panel is opened, so the controller can refresh the advice. */
   onCoachPanelOpened: () => void;
   /** Fired when the hint is shown/hidden, so the controller can highlight the move. */
@@ -39,7 +40,9 @@ export interface UiHandle {
   /** Close the Moves / Coach / settings drop-downs (e.g. when the player taps the board). */
   closePanels: () => void;
   /** Sync the coach checkboxes (e.g. from a restored game). */
-  setCoachSettings: (enabled: boolean, blunderWarn: boolean) => void;
+  setCoachSettings: (enabled: boolean, blunderWarn: boolean, explainMoves: boolean) => void;
+  /** Show a one-line rules explanation (a rejected move), or clear it with null. */
+  setRulesNote: (text: string | null) => void;
   /** Show a placeholder while the coach is analysing. */
   setCoachThinking: () => void;
   /** Fill the coach panel with fresh advice (hint stays hidden until "Show a hint"). */
@@ -124,6 +127,8 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   const coachHintReason = requireEl<HTMLSpanElement>('coach-hint-reason');
   const coachEnabledBox = requireEl<HTMLInputElement>('coach-enabled');
   const coachBlunderBox = requireEl<HTMLInputElement>('coach-blunder');
+  const rulesExplainBox = requireEl<HTMLInputElement>('rules-explain');
+  const rulesNote = requireEl<HTMLDivElement>('rules-note');
   const moveList = requireEl<HTMLOListElement>('move-list');
   const promotionPicker = requireEl<HTMLDivElement>('promotion-picker');
   const promotionChoices = requireEl<HTMLDivElement>('promotion-choices');
@@ -212,6 +217,9 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   coachBlunderBox.addEventListener('change', () => {
     callbacks.onBlunderWarnChange(coachBlunderBox.checked);
   });
+  rulesExplainBox.addEventListener('change', () => {
+    callbacks.onExplainMovesChange(rulesExplainBox.checked);
+  });
 
   let pendingBlunder: ((play: boolean) => void) | null = null;
   function resolveBlunder(play: boolean): void {
@@ -291,11 +299,20 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
       viewToggle.title = mode === '3d' ? 'Switch to the flat board' : 'Switch to the 3D board';
     },
     closePanels,
-    setCoachSettings(enabled, blunderWarn) {
+    setCoachSettings(enabled, blunderWarn, explainMoves) {
       coachEnabledBox.checked = enabled;
       coachBlunderBox.checked = blunderWarn;
+      rulesExplainBox.checked = explainMoves;
       coachAdviceEl.classList.toggle('coach-off', !enabled);
       if (!enabled && coachPanel.hidden === false) showCoachPlaceholder();
+    },
+    setRulesNote(text) {
+      if (text) {
+        rulesNote.textContent = text;
+        rulesNote.classList.remove('rules-note-idle');
+      } else {
+        rulesNote.classList.add('rules-note-idle');
+      }
     },
     setCoachThinking() {
       coachStanding.hidden = true;

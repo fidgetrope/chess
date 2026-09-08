@@ -23,6 +23,8 @@ export interface SavedGame {
   view?: ViewMode;
   coach?: boolean;
   blunderWarn?: boolean;
+  /** "Explain moves I can't make" — absent means on (opt-out). */
+  explainMoves?: boolean;
   savedAt: number;
 }
 
@@ -32,6 +34,7 @@ export function saveGame(state: {
   view: ViewMode;
   coach: boolean;
   blunderWarn: boolean;
+  explainMoves: boolean;
 }): void {
   try {
     const payload: SavedGame = { v: 1, savedAt: Date.now(), ...state };

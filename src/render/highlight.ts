@@ -46,6 +46,16 @@ const hintRingMaterial = new THREE.MeshBasicMaterial({
   opacity: 0.9,
 });
 
+// A square the player just tried to move to illegally — a solid red dot
+// where the green "you can go here" dot would otherwise be.
+const rejectedDotGeometry = new THREE.CircleGeometry(0.17, 28);
+const rejectedDotMaterial = new THREE.MeshBasicMaterial({
+  color: 0xd64230,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.9,
+});
+
 function flatMarkerAt(
   geometry: THREE.BufferGeometry,
   material: THREE.Material,
@@ -68,6 +78,8 @@ export interface HighlightState {
   checkSquare: { row: number; col: number } | null;
   /** The coach's suggested move, when the hint is showing. */
   hintMove: { from: string; to: string } | null;
+  /** A square the player just tried to move to illegally — flashed in red. */
+  rejectedSquare: { row: number; col: number } | null;
 }
 
 /**
@@ -105,5 +117,16 @@ export function updateHighlights(highlightGroup: THREE.Group, state: HighlightSt
     } else {
       highlightGroup.add(flatMarkerAt(moveDotGeometry, moveDotMaterial, row, col));
     }
+  }
+
+  if (state.rejectedSquare) {
+    highlightGroup.add(
+      flatMarkerAt(
+        rejectedDotGeometry,
+        rejectedDotMaterial,
+        state.rejectedSquare.row,
+        state.rejectedSquare.col,
+      ),
+    );
   }
 }

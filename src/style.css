@@ -281,6 +281,32 @@ body {
   cursor: pointer;
 }
 
+/* ---- Rules helper note (why a move isn't allowed) ---- */
+#rules-note {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(92vw, 420px);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #2a2016;
+  border: 1px solid #6b4a34;
+  color: #ffdca8;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 5;
+  opacity: 1;
+  transition: opacity 0.18s ease;
+}
+
+#rules-note.rules-note-idle {
+  opacity: 0;
+}
+
 /* ---- Blunder confirm dialog ---- */
 #blunder-dialog {
   position: absolute;
@@ -584,6 +610,18 @@ body {
 /* Coach hint — a blue ring on the from and to squares; stacks with any tint. */
 .b2d-sq.hint {
   box-shadow: inset 0 0 0 clamp(2px, 0.8vw, 4px) #5aa9ff;
+}
+
+/* A square the player just tried to move to illegally — a solid red dot
+   where the green "you can go here" dot would be. */
+.b2d-sq.rejected::after {
+  content: '';
+  position: absolute;
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+  background: rgba(214, 66, 48, 0.92);
+  z-index: 1;
 }
 
 .b2d-ranks,
