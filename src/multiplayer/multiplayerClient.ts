@@ -2,12 +2,13 @@
 // only via a dynamic import() from the controller, so the Firebase SDK is
 // never downloaded by a player who never opens this mode.
 //
-// Model: one document per game at games/{gameId}. The creator is always
-// White, whoever joins is Black; each browser gets a silent, no-password
-// "anonymous" identity so the security rules can tell the two players
-// apart without any sign-up. The document holds the *entire* move list —
-// each local move overwrites it wholesale (not an append/arrayUnion, which
-// would silently de-duplicate two plies that happen to share a from/to).
+// Model: one document per game at games/{gameId}. The creator picks their
+// own colour (or leaves it to chance); whoever joins takes the other,
+// empty seat. Each browser gets a silent, no-password "anonymous" identity
+// so the security rules can tell the two players apart without any
+// sign-up. The document holds the *entire* move list — each local move
+// overwrites it wholesale (not an append/arrayUnion, which would silently
+// de-duplicate two plies that happen to share a from/to).
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously, type Auth, type User } from 'firebase/auth';
 import {
@@ -121,17 +122,24 @@ function buildSession(gameId: string, color: Color, data: GameDoc): MultiplayerS
   };
 }
 
-/** Starts a brand-new game. This browser becomes White. */
-export async function createGame(): Promise<MultiplayerSession> {
+/**
+ * Starts a brand-new game with this browser seated as `hostColor`
+ * ('random' flips a coin client-side — nothing server-side depends on it).
+ */
+export async function createGame(hostColor: Color | 'random' = 'white'): Promise<MultiplayerSession> {
   const { db, authReady } = ensureFirebase();
   const user = await authReady;
   const gameId = randomGameId();
-  const data: GameDoc = { players: { white: user.uid, black: null }, moves: [] };
+  const color: Color = hostColor === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : hostColor;
+  const data: GameDoc = {
+    players: color === 'white' ? { white: user.uid, black: null } : { white: null, black: user.uid },
+    moves: [],
+  };
   await setDoc(doc(db, 'games', gameId), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-  return buildSession(gameId, 'white', data);
+  return buildSession(gameId, color, data);
 }
 
-/** Joins an existing game by its code (or re-enters one this browser already has a seat in). */
+/** Joins an existing game by its code, taking whichever seat is empty (or re-enters one this browser already has). */
 export async function joinGame(gameId: string): Promise<MultiplayerSession> {
   const { db, authReady } = ensureFirebase();
   const user = await authReady;
@@ -142,10 +150,13 @@ export async function joinGame(gameId: string): Promise<MultiplayerSession> {
 
   if (data.players.white === user.uid) return buildSession(gameId, 'white', data);
   if (data.players.black === user.uid) return buildSession(gameId, 'black', data);
-  if (data.players.black) throw new Error('That game already has two players.');
 
-  await updateDoc(ref, { 'players.black': user.uid, updatedAt: serverTimestamp() });
-  return buildSession(gameId, 'black', { ...data, players: { ...data.players, black: user.uid } });
+  const emptySeat: Color | null =
+    data.players.white === null ? 'white' : data.players.black === null ? 'black' : null;
+  if (!emptySeat) throw new Error('That game already has two players.');
+
+  await updateDoc(ref, { [`players.${emptySeat}`]: user.uid, updatedAt: serverTimestamp() });
+  return buildSession(gameId, emptySeat, { ...data, players: { ...data.players, [emptySeat]: user.uid } });
 }
 
 /** Reconnects to a game this browser was already seated in — used on reload. */

@@ -46,7 +46,14 @@
             <hr />
             <div id="mp-idle">
               <p class="mp-label">Play a friend, remotely</p>
-              <button id="mp-create" type="button">Create a game</button>
+              <div id="mp-create-row">
+                <select id="mp-color-select" aria-label="Which colour to play">
+                  <option value="white" selected>Play White</option>
+                  <option value="black">Play Black</option>
+                  <option value="random">Random</option>
+                </select>
+                <button id="mp-create" type="button">Create</button>
+              </div>
               <div id="mp-join-row">
                 <input id="mp-code-input" type="text" placeholder="Or enter a code" autocomplete="off" autocapitalize="characters" />
                 <button id="mp-join" type="button">Join</button>

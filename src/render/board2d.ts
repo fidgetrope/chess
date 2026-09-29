@@ -35,6 +35,8 @@ export interface Board2dHandle {
   element: HTMLElement;
   render: (state: Board2dState) => void;
   setVisible: (visible: boolean) => void;
+  /** Flips the board to Black's perspective (rank 1 at top, h-file on the left). */
+  setOrientation: (flipped: boolean) => void;
 }
 
 function squareName(row: number, col: number): string {
@@ -133,6 +135,16 @@ export function createBoard2d(onPick: (square: Square | null) => void): Board2dH
     render,
     setVisible(visible: boolean) {
       root.hidden = !visible;
+    },
+    setOrientation(flipped: boolean) {
+      // The render() function above addresses every cell by algebraic name,
+      // not screen position, so flipping is purely visual: rotate the grid
+      // 180° and counter-rotate each piece glyph to keep it upright, then
+      // reverse the label strips the same way (flex-direction, not
+      // rotation, so the numerals/letters themselves stay the right way up).
+      boardEl.classList.toggle('flipped', flipped);
+      ranks.classList.toggle('flipped', flipped);
+      files.classList.toggle('flipped', flipped);
     },
   };
 }

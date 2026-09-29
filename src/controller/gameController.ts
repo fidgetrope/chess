@@ -563,11 +563,30 @@ export function startGame(container: HTMLElement): void {
     }
   }
 
+  /**
+   * Rotates the 3D board+pieces 180° (and mirrors the 2D grid) so whichever
+   * colour `myColor` is playing sits nearest the camera / at the bottom of
+   * the screen — the camera and the room stay exactly where they are, only
+   * the board+pieces groups turn, the same as walking round to the other
+   * side of a real table. Picking needs no changes: each tile/piece mesh
+   * reports its own logical square via userData regardless of the group's
+   * transform, and Three.js raycasts against the current world transform.
+   */
+  function applyBoardOrientation(): void {
+    const flipped = myColor === 'black';
+    const yaw = flipped ? Math.PI : 0;
+    sceneRefs.boardGroup.rotation.y = yaw;
+    sceneRefs.pieceGroup.rotation.y = yaw;
+    sceneRefs.highlightGroup.rotation.y = yaw;
+    board2d.setOrientation(flipped);
+  }
+
   /** Loads a fully-seated or waiting session into the game and starts listening for opponent moves. */
   function enterMultiplayer(session: MultiplayerSession): void {
     mpUnsubscribe?.();
     mpSession = session;
     myColor = session.color;
+    applyBoardOrientation();
     aiRequestId++; // invalidate any in-flight solo AI reply
     pendingAi = null;
 
@@ -601,11 +620,11 @@ export function startGame(container: HTMLElement): void {
     syncUiAfterMove();
   }
 
-  async function startMultiplayerCreate(): Promise<void> {
+  async function startMultiplayerCreate(hostColor: Color | 'random'): Promise<void> {
     ui.setMultiplayerPanel({ phase: 'creating' });
     try {
       const { createGame } = await loadMultiplayerClient();
-      enterMultiplayer(await createGame());
+      enterMultiplayer(await createGame(hostColor));
     } catch (err) {
       ui.setMultiplayerPanel({ phase: 'error', message: friendlyMpError(err) });
     }
@@ -661,6 +680,7 @@ export function startGame(container: HTMLElement): void {
     mpSession = null;
     clearMultiplayerPointer();
     myColor = 'white';
+    applyBoardOrientation();
     ui.setOpponentLabel('AI');
     ui.setMultiplayerPanel({ phase: 'idle' });
     restart();
@@ -710,8 +730,8 @@ export function startGame(container: HTMLElement): void {
       hintMove = shown ? move : null;
       refreshView();
     },
-    onCreateGame() {
-      void startMultiplayerCreate();
+    onCreateGame(hostColor) {
+      void startMultiplayerCreate(hostColor);
     },
     onJoinGame(code) {
       void startMultiplayerJoin(code);

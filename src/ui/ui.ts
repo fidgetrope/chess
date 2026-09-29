@@ -33,7 +33,7 @@ export interface UiCallbacks {
   onCoachPanelOpened: () => void;
   /** Fired when the hint is shown/hidden, so the controller can highlight the move. */
   onHintRevealed: (shown: boolean, move: { from: string; to: string } | null) => void;
-  onCreateGame: () => void;
+  onCreateGame: (hostColor: Color | 'random') => void;
   onJoinGame: (code: string) => void;
   onLeaveGame: () => void;
   /** The error view's OK button — just dismiss it, no game-state side effects. */
@@ -162,6 +162,7 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   const soloControls = requireEl<HTMLDivElement>('solo-controls');
   const mpIdle = requireEl<HTMLDivElement>('mp-idle');
   const mpCreateBtn = requireEl<HTMLButtonElement>('mp-create');
+  const mpColorSelect = requireEl<HTMLSelectElement>('mp-color-select');
   const mpCodeInput = requireEl<HTMLInputElement>('mp-code-input');
   const mpJoinBtn = requireEl<HTMLButtonElement>('mp-join');
   const mpBusy = requireEl<HTMLDivElement>('mp-busy');
@@ -318,7 +319,9 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     }
   }
 
-  mpCreateBtn.addEventListener('click', () => callbacks.onCreateGame());
+  mpCreateBtn.addEventListener('click', () => {
+    callbacks.onCreateGame(mpColorSelect.value as Color | 'random');
+  });
   mpJoinBtn.addEventListener('click', () => {
     if (mpCodeInput.value.trim()) callbacks.onJoinGame(mpCodeInput.value);
   });

@@ -15,18 +15,28 @@ service cloud.firestore {
     match /games/{gameId} {
       allow read: if request.auth != null;
 
+      // The creator may take either seat, leaving the other empty.
       allow create: if request.auth != null
-        && request.resource.data.players.white == request.auth.uid
-        && request.resource.data.players.black == null
         && request.resource.data.moves == []
-        && gameId.matches('^[A-Z0-9]{6}$');
+        && gameId.matches('^[A-Z0-9]{6}$')
+        && (
+          (request.resource.data.players.white == request.auth.uid && request.resource.data.players.black == null)
+          ||
+          (request.resource.data.players.black == request.auth.uid && request.resource.data.players.white == null)
+        );
 
       allow update: if request.auth != null
         && (
-          // claiming the empty second seat
-          (resource.data.players.black == null
-            && request.resource.data.players.black == request.auth.uid
-            && request.resource.data.players.white == resource.data.players.white)
+          // claiming whichever seat is still empty
+          (
+            (resource.data.players.white == null
+              && request.resource.data.players.white == request.auth.uid
+              && request.resource.data.players.black == resource.data.players.black)
+            ||
+            (resource.data.players.black == null
+              && request.resource.data.players.black == request.auth.uid
+              && request.resource.data.players.white == resource.data.players.white)
+          )
           ||
           // an existing player pushing a move
           ((request.auth.uid == resource.data.players.white || request.auth.uid == resource.data.players.black)

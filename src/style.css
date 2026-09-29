@@ -434,9 +434,15 @@ body {
   margin: 0;
 }
 
+#mp-create-row,
 #mp-join-row {
   display: flex;
   gap: 6px;
+}
+
+#mp-create-row select {
+  flex: 1;
+  min-width: 0;
 }
 
 #mp-code-input {
@@ -451,6 +457,7 @@ body {
   color: #f2e9dc;
 }
 
+#mp-create-row button,
 #mp-join-row button {
   flex-shrink: 0;
 }
@@ -633,6 +640,28 @@ body {
 .b2d-sq > span {
   position: relative;
   z-index: 2;
+}
+
+/* Flipped orientation (Black's view in a multiplayer game). render() keys
+   every cell by algebraic name, not screen position, so the flip is purely
+   visual: rotate the grid and counter-rotate each glyph to keep it upright;
+   reverse the label strips by direction, not rotation, so the characters
+   themselves stay the right way up. */
+.b2d-board.flipped {
+  transform: rotate(180deg);
+}
+
+.b2d-board.flipped .b2d-sq > span {
+  display: inline-block;
+  transform: rotate(180deg);
+}
+
+.b2d-ranks.flipped {
+  flex-direction: column-reverse;
+}
+
+.b2d-files.flipped {
+  flex-direction: row-reverse;
 }
 
 /* Outline the white pieces with a text-shadow "halo" rather than
