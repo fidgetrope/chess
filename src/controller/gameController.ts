@@ -530,13 +530,37 @@ export function startGame(container: HTMLElement): void {
 
   // ---- "Play a friend" -------------------------------------------------
 
+  function isChunkLoadError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return /dynamically imported module|loading chunk|importing a module script failed/i.test(message);
+  }
+
   function friendlyMpError(err: unknown): string {
+    if (isChunkLoadError(err)) {
+      return "Couldn't load — that's usually just a shaky connection. Check you're online and try again.";
+    }
     const code = (err as { code?: string } | null)?.code ?? '';
     if (code.includes('permission-denied')) {
       return "Couldn't connect — the Firestore rules might not be published yet.";
     }
     if (err instanceof Error && err.message) return err.message;
     return 'Something went wrong connecting. Please try again.';
+  }
+
+  /**
+   * Loads the multiplayer module, retrying once after a short pause if the
+   * chunk fetch fails — a mobile network blip is common and the browser's
+   * own dynamic import() has no built-in retry, so the first hiccup would
+   * otherwise always surface as an error even though trying again works.
+   */
+  async function loadMultiplayerClient(): Promise<typeof import('../multiplayer/multiplayerClient.ts')> {
+    try {
+      return await import('../multiplayer/multiplayerClient.ts');
+    } catch (err) {
+      if (!isChunkLoadError(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return import('../multiplayer/multiplayerClient.ts');
+    }
   }
 
   /** Loads a fully-seated or waiting session into the game and starts listening for opponent moves. */
@@ -580,7 +604,7 @@ export function startGame(container: HTMLElement): void {
   async function startMultiplayerCreate(): Promise<void> {
     ui.setMultiplayerPanel({ phase: 'creating' });
     try {
-      const { createGame } = await import('../multiplayer/multiplayerClient.ts');
+      const { createGame } = await loadMultiplayerClient();
       enterMultiplayer(await createGame());
     } catch (err) {
       ui.setMultiplayerPanel({ phase: 'error', message: friendlyMpError(err) });
@@ -608,7 +632,7 @@ export function startGame(container: HTMLElement): void {
     }
     ui.setMultiplayerPanel({ phase: 'joining' });
     try {
-      const { joinGame } = await import('../multiplayer/multiplayerClient.ts');
+      const { joinGame } = await loadMultiplayerClient();
       enterMultiplayer(await joinGame(code));
     } catch (err) {
       ui.setMultiplayerPanel({ phase: 'error', message: friendlyMpError(err) });
@@ -621,10 +645,12 @@ export function startGame(container: HTMLElement): void {
     if (!pointer) return;
     ui.setMultiplayerPanel({ phase: 'joining' });
     try {
-      const { rejoinGame } = await import('../multiplayer/multiplayerClient.ts');
+      const { rejoinGame } = await loadMultiplayerClient();
       enterMultiplayer(await rejoinGame(pointer.gameId, pointer.color));
     } catch (err) {
-      clearMultiplayerPointer();
+      // A network blip shouldn't cost the player their seat — only give up
+      // the pointer once we get an actual answer that says the game/seat is gone.
+      if (!isChunkLoadError(err)) clearMultiplayerPointer();
       ui.setMultiplayerPanel({ phase: 'error', message: friendlyMpError(err) });
     }
   }
