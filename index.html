@@ -17,7 +17,7 @@
             <div id="check-banner" class="hidden">Check</div>
             <div id="captured-tray" hidden>
               <span class="cap-side"><span class="cap-tag">You</span><span id="captured-by-you" class="captured-pieces"></span></span>
-              <span class="cap-side"><span class="cap-tag">AI</span><span id="captured-by-ai" class="captured-pieces"></span></span>
+              <span class="cap-side"><span id="opponent-tag" class="cap-tag">AI</span><span id="captured-by-ai" class="captured-pieces"></span></span>
             </div>
           </div>
           <div id="hud-actions">
@@ -32,13 +32,45 @@
         <div id="rules-note" class="rules-note-idle" role="status" aria-live="polite"></div>
 
         <div id="menu-panel" hidden>
-          <label for="difficulty">Difficulty</label>
-          <select id="difficulty">
-            <option value="easy" selected>Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-          <button id="restart" type="button">Restart</button>
+          <div id="solo-controls">
+            <label for="difficulty">Difficulty</label>
+            <select id="difficulty">
+              <option value="easy" selected>Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+            <button id="restart" type="button">Restart</button>
+          </div>
+
+          <div id="mp-section">
+            <hr />
+            <div id="mp-idle">
+              <p class="mp-label">Play a friend, remotely</p>
+              <button id="mp-create" type="button">Create a game</button>
+              <div id="mp-join-row">
+                <input id="mp-code-input" type="text" placeholder="Or enter a code" autocomplete="off" autocapitalize="characters" />
+                <button id="mp-join" type="button">Join</button>
+              </div>
+            </div>
+            <div id="mp-busy" hidden>
+              <p id="mp-busy-text">Connecting…</p>
+            </div>
+            <div id="mp-waiting" hidden>
+              <p class="mp-label">Game code</p>
+              <p id="mp-code" class="mp-code"></p>
+              <button id="mp-copy-link" type="button">Copy invite link</button>
+              <p class="mp-hint">Waiting for your friend to join…</p>
+              <button id="mp-leave-waiting" type="button" class="mp-leave">Leave</button>
+            </div>
+            <div id="mp-active" hidden>
+              <p id="mp-active-text" class="mp-label"></p>
+              <button id="mp-leave-active" type="button" class="mp-leave">Leave game</button>
+            </div>
+            <div id="mp-error" hidden>
+              <p id="mp-error-text"></p>
+              <button id="mp-error-ok" type="button">OK</button>
+            </div>
+          </div>
         </div>
 
         <div id="moves-panel" hidden>

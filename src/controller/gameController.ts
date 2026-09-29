@@ -4,8 +4,16 @@ import type { AiRequest, AiResponse } from '../ai/worker.ts';
 import CoachWorker from '../ai/coachWorker.ts?worker';
 import type { CoachRequest, CoachResponse } from '../ai/coachWorker.ts';
 import type { DifficultyLevel } from '../ai/difficulty.ts';
-import { ChessGame, squareToGrid } from '../core/game.ts';
-import { loadGame, saveGame } from '../core/persistence.ts';
+import { ChessGame, opponentOf, squareToGrid } from '../core/game.ts';
+import type { MultiplayerSession } from '../multiplayer/multiplayerClient.ts';
+import {
+  clearMultiplayerPointer,
+  loadGame,
+  loadMultiplayerPointer,
+  saveGame,
+  saveMultiplayerPointer,
+  type SavedMove,
+} from '../core/persistence.ts';
 import type { Color, MoveOption, PieceSymbol, Square, ViewMode } from '../core/types.ts';
 import { animateCapture, animateMove, animatePromotionReveal } from '../render/animation.ts';
 import { createBoard2d } from '../render/board2d.ts';
@@ -16,8 +24,6 @@ import { createPieceMesh, type PieceMesh } from '../render/pieceMesh.ts';
 import { createScene, startRenderLoop } from '../render/scene.ts';
 import { createUi } from '../ui/ui.ts';
 
-const HUMAN_COLOR: Color = 'white';
-const AI_COLOR: Color = 'black';
 const AI_MIN_THINK_MS = 300; // floor so the "AI thinking…" label is legible even on instant replies
 
 /** Wires core (rules/AI) + render (Three.js) + ui together. The only module that imports across all of them. */
@@ -32,6 +38,10 @@ export function startGame(container: HTMLElement): void {
   let legalFromSelected: MoveOption[] = [];
   let busy = false; // true while animating or waiting on the AI
 
+  // Which colour *this* browser is playing. Always white against the AI;
+  // in a "Play a friend" game it's whichever seat this browser took.
+  let myColor: Color = 'white';
+
   // Rules helper (opt-out): explain why a tapped move isn't legal.
   let explainMovesEnabled = true;
   let rejectedSquare: Square | null = null;
@@ -39,6 +49,12 @@ export function startGame(container: HTMLElement): void {
   let aiRequestId = 0;
   let pendingAi: { requestId: number; startedAt: number } | null = null;
   let setRenderLoopActive: (active: boolean) => void = () => {};
+
+  // "Play a friend" (opt-in): when set, the opponent's moves arrive over
+  // Firestore instead of from the AI worker, and our own moves are pushed
+  // out after being applied locally exactly like any other move.
+  let mpSession: MultiplayerSession | null = null;
+  let mpUnsubscribe: (() => void) | null = null;
 
   // Coach (opt-in): a second worker analyses the human's turn, off by default.
   let coachEnabled = false;
@@ -67,6 +83,18 @@ export function startGame(container: HTMLElement): void {
 
   function squareKey(square: Square): string {
     return `${'abcdefgh'[square.col]}${square.row + 1}`;
+  }
+
+  /**
+   * The played move list in SavedMove shape. `promotion` is *omitted*, not
+   * set to undefined, for non-promoting moves — Firestore's SDK rejects any
+   * field explicitly valued `undefined` (JSON.stringify silently drops it,
+   * which is why this distinction never mattered for the solo save before).
+   */
+  function historyAsSavedMoves(): SavedMove[] {
+    return game.detailedHistory().map((m) =>
+      m.promotion ? { from: m.from, to: m.to, promotion: m.promotion } : { from: m.from, to: m.to },
+    );
   }
 
   function rebuildPieceMeshes(): void {
@@ -175,7 +203,7 @@ export function startGame(container: HTMLElement): void {
     if (
       !coachEnabled ||
       busy ||
-      game.turn !== HUMAN_COLOR ||
+      game.turn !== myColor ||
       game.outcome().type !== 'in-progress'
     ) {
       return;
@@ -185,7 +213,7 @@ export function startGame(container: HTMLElement): void {
     getCoachWorker().postMessage({
       requestId,
       fen: game.fen(),
-      humanColor: HUMAN_COLOR,
+      humanColor: myColor,
       mode: 'panel',
     } satisfies CoachRequest);
   }
@@ -197,7 +225,7 @@ export function startGame(container: HTMLElement): void {
       getCoachWorker().postMessage({
         requestId,
         fen: game.fen(),
-        humanColor: HUMAN_COLOR,
+        humanColor: myColor,
         mode: 'blunderCheck',
         move: { from: move.from, to: move.to, promotion: move.promotion },
       } satisfies CoachRequest);
@@ -240,15 +268,16 @@ export function startGame(container: HTMLElement): void {
   }
 
   function updateCapturedUi(): void {
-    const byWhite: PieceSymbol[] = [];
-    const byBlack: PieceSymbol[] = [];
+    const byMe: PieceSymbol[] = [];
+    const byOpponent: PieceSymbol[] = [];
     // White plays plies 0, 2, 4…; the captured man is the opposite colour
     // to whoever moved on that ply.
     game.detailedHistory().forEach((move, ply) => {
       if (!move.captured) return;
-      (ply % 2 === 0 ? byWhite : byBlack).push(move.captured);
+      const mover: Color = ply % 2 === 0 ? 'white' : 'black';
+      (mover === myColor ? byMe : byOpponent).push(move.captured);
     });
-    ui.setCaptured(byWhite, byBlack);
+    ui.setCaptured(byMe, byOpponent, myColor);
   }
 
   function updateStatusUi(): void {
@@ -256,19 +285,20 @@ export function startGame(container: HTMLElement): void {
     if (outcome.type !== 'in-progress') {
       ui.setTurn('Game over');
       ui.setCheck(false);
-      ui.showGameOver(outcome, HUMAN_COLOR);
+      ui.showGameOver(outcome, myColor, mpSession ? 'your opponent' : 'the AI');
       return;
     }
     ui.hideGameOver();
-    ui.setTurn(game.turn === HUMAN_COLOR ? 'Your turn' : 'AI thinking…');
+    const myTurn = game.turn === myColor;
+    ui.setTurn(myTurn ? 'Your turn' : mpSession ? 'Waiting for them…' : 'AI thinking…');
     ui.setCheck(game.inCheck());
   }
 
+  /** Multiplayer state lives in Firestore, not localStorage — only solo games use the save slot. */
   function persist(): void {
+    if (mpSession) return;
     saveGame({
-      moves: game
-        .detailedHistory()
-        .map((m) => ({ from: m.from, to: m.to, promotion: m.promotion })),
+      moves: historyAsSavedMoves(),
       difficulty,
       view: viewMode,
       coach: coachEnabled,
@@ -297,7 +327,7 @@ export function startGame(container: HTMLElement): void {
     clearRulesNote();
     ui.setMoveList(game.history());
     updateCapturedUi();
-    ui.setUndoEnabled(!busy && game.plyCount() > 0 && game.turn === HUMAN_COLOR);
+    ui.setUndoEnabled(!mpSession && !busy && game.plyCount() > 0 && game.turn === myColor);
     updateStatusUi();
     requestCoachAnalysis(); // clears any stale hint; fires a fresh analysis on the human's turn
     refreshView();
@@ -365,8 +395,22 @@ export function startGame(container: HTMLElement): void {
     busy = false;
     syncUiAfterMove();
 
-    if (game.outcome().type === 'in-progress' && game.turn === AI_COLOR) {
+    // Solo: ask the worker for the AI's reply. Multiplayer: nothing to do —
+    // the opponent's move arrives on its own over the Firestore listener.
+    if (!mpSession && game.outcome().type === 'in-progress' && game.turn === opponentOf(myColor)) {
       requestAiMove();
+    }
+  }
+
+  /** Applies every move beyond what we've already played, one at a time (animated, like the AI's reply). */
+  async function applyRemoteMoves(remoteMoves: SavedMove[]): Promise<void> {
+    while (game.plyCount() < remoteMoves.length) {
+      const next = remoteMoves[game.plyCount()];
+      const chosen = game
+        .legalMoves()
+        .find((m) => m.from === next.from && m.to === next.to && m.promotion === next.promotion);
+      if (!chosen) break; // shouldn't happen; guards against a corrupt remote document
+      await playMove(chosen);
     }
   }
 
@@ -405,7 +449,7 @@ export function startGame(container: HTMLElement): void {
 
   async function handlePick(square: Square | null): Promise<void> {
     clearRulesNote();
-    if (busy || game.outcome().type !== 'in-progress' || game.turn !== HUMAN_COLOR) return;
+    if (busy || game.outcome().type !== 'in-progress' || game.turn !== myColor) return;
     if (!square) {
       clearSelection();
       return;
@@ -424,12 +468,13 @@ export function startGame(container: HTMLElement): void {
           return;
         }
         await playMove(move);
+        if (mpSession) void mpSession.pushMoves(historyAsSavedMoves());
         return;
       }
     }
 
     const piece = game.pieceAt(square);
-    if (piece && piece.color === HUMAN_COLOR) {
+    if (piece && piece.color === myColor) {
       const moves = game.legalMovesFrom(square);
       if (moves.length === 0) {
         const reason = explainMovesEnabled ? game.explainNoMoves(squareKey(square)) : null;
@@ -459,7 +504,9 @@ export function startGame(container: HTMLElement): void {
     clearSelection();
   }
 
+  /** Starts a fresh solo game. No-op mid multiplayer game — use "Leave game" instead. */
   function restart(): void {
+    if (mpSession) return;
     aiRequestId++; // invalidate any in-flight AI reply
     pendingAi = null;
     game = new ChessGame();
@@ -470,19 +517,132 @@ export function startGame(container: HTMLElement): void {
   }
 
   function undo(): void {
-    if (busy || game.turn !== HUMAN_COLOR) return;
+    if (mpSession || busy || game.turn !== myColor) return;
     aiRequestId++;
     pendingAi = null;
     // Roll back to the human's previous turn: the AI's reply plus our move.
     game.undo();
-    if (game.turn !== HUMAN_COLOR) game.undo();
+    if (game.turn !== myColor) game.undo();
     clearSelection();
     rebuildPieceMeshes();
     syncUiAfterMove();
   }
 
+  // ---- "Play a friend" -------------------------------------------------
+
+  function friendlyMpError(err: unknown): string {
+    const code = (err as { code?: string } | null)?.code ?? '';
+    if (code.includes('permission-denied')) {
+      return "Couldn't connect — the Firestore rules might not be published yet.";
+    }
+    if (err instanceof Error && err.message) return err.message;
+    return 'Something went wrong connecting. Please try again.';
+  }
+
+  /** Loads a fully-seated or waiting session into the game and starts listening for opponent moves. */
+  function enterMultiplayer(session: MultiplayerSession): void {
+    mpUnsubscribe?.();
+    mpSession = session;
+    myColor = session.color;
+    aiRequestId++; // invalidate any in-flight solo AI reply
+    pendingAi = null;
+
+    game = new ChessGame();
+    for (const move of session.initialMoves) {
+      try {
+        game.move(move);
+      } catch {
+        break; // corrupt remote document — keep whatever replayed cleanly
+      }
+    }
+
+    saveMultiplayerPointer({ gameId: session.gameId, color: session.color });
+    ui.setOpponentLabel('Opponent');
+    ui.setMultiplayerPanel(
+      session.opponentJoined
+        ? { phase: 'active', color: myColor }
+        : { phase: 'waiting', gameId: session.gameId, shareUrl: session.shareUrl },
+    );
+
+    mpUnsubscribe = session.subscribe((moves, opponentJoined) => {
+      if (opponentJoined && mpSession === session) {
+        ui.setMultiplayerPanel({ phase: 'active', color: myColor });
+      }
+      void applyRemoteMoves(moves);
+    });
+
+    busy = false;
+    clearSelection();
+    rebuildPieceMeshes();
+    syncUiAfterMove();
+  }
+
+  async function startMultiplayerCreate(): Promise<void> {
+    ui.setMultiplayerPanel({ phase: 'creating' });
+    try {
+      const { createGame } = await import('../multiplayer/multiplayerClient.ts');
+      enterMultiplayer(await createGame());
+    } catch (err) {
+      ui.setMultiplayerPanel({ phase: 'error', message: friendlyMpError(err) });
+    }
+  }
+
+  /** Accepts a bare game code or a pasted invite link. */
+  function extractGameCode(input: string): string | null {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+    try {
+      const fromUrl = new URL(trimmed).searchParams.get('game');
+      if (fromUrl) return fromUrl.toUpperCase();
+    } catch {
+      // not a URL — fall through and treat the whole thing as a bare code
+    }
+    return trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
+  }
+
+  async function startMultiplayerJoin(rawCode: string): Promise<void> {
+    const code = extractGameCode(rawCode);
+    if (!code) {
+      ui.setMultiplayerPanel({ phase: 'error', message: "That doesn't look like a game code." });
+      return;
+    }
+    ui.setMultiplayerPanel({ phase: 'joining' });
+    try {
+      const { joinGame } = await import('../multiplayer/multiplayerClient.ts');
+      enterMultiplayer(await joinGame(code));
+    } catch (err) {
+      ui.setMultiplayerPanel({ phase: 'error', message: friendlyMpError(err) });
+    }
+  }
+
+  /** On load: reconnect to a game this browser already had a seat in. */
+  async function reconnectMultiplayer(): Promise<void> {
+    const pointer = loadMultiplayerPointer();
+    if (!pointer) return;
+    ui.setMultiplayerPanel({ phase: 'joining' });
+    try {
+      const { rejoinGame } = await import('../multiplayer/multiplayerClient.ts');
+      enterMultiplayer(await rejoinGame(pointer.gameId, pointer.color));
+    } catch (err) {
+      clearMultiplayerPointer();
+      ui.setMultiplayerPanel({ phase: 'error', message: friendlyMpError(err) });
+    }
+  }
+
+  function leaveMultiplayer(): void {
+    mpUnsubscribe?.();
+    mpUnsubscribe = null;
+    mpSession = null;
+    clearMultiplayerPointer();
+    myColor = 'white';
+    ui.setOpponentLabel('AI');
+    ui.setMultiplayerPanel({ phase: 'idle' });
+    restart();
+  }
+
   const ui = createUi({
     onDifficultyChange(level) {
+      if (mpSession) return;
       difficulty = level;
       restart();
     },
@@ -524,6 +684,18 @@ export function startGame(container: HTMLElement): void {
       hintMove = shown ? move : null;
       refreshView();
     },
+    onCreateGame() {
+      void startMultiplayerCreate();
+    },
+    onJoinGame(code) {
+      void startMultiplayerJoin(code);
+    },
+    onLeaveGame() {
+      leaveMultiplayer();
+    },
+    onDismissMultiplayerError() {
+      ui.setMultiplayerPanel({ phase: 'idle' });
+    },
   });
 
   setupPicking(
@@ -553,16 +725,34 @@ export function startGame(container: HTMLElement): void {
     }
   }
 
+  /** A shared invite link (?game=CODE) — consumed once, then scrubbed from the URL. */
+  function consumeGameCodeFromUrl(): string | null {
+    const url = new URL(location.href);
+    const code = url.searchParams.get('game');
+    if (!code) return null;
+    url.searchParams.delete('game');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    return code;
+  }
+
   setRenderLoopActive = startRenderLoop(sceneRefs);
 
+  // The solo game restores first regardless — it's what's waiting if a
+  // multiplayer connection below fails, or once the player leaves one.
   restoreSavedGame();
   ui.setCoachSettings(coachEnabled, blunderWarnEnabled, explainMovesEnabled);
   rebuildPieceMeshes();
   syncUiAfterMove();
   applyViewMode();
 
-  // If the tab was closed on the AI's turn, let it move now.
-  if (game.outcome().type === 'in-progress' && game.turn === AI_COLOR) {
+  const urlGameCode = consumeGameCodeFromUrl();
+  const mpPointer = loadMultiplayerPointer();
+  if (urlGameCode) {
+    void startMultiplayerJoin(urlGameCode);
+  } else if (mpPointer) {
+    void reconnectMultiplayer();
+  } else if (game.outcome().type === 'in-progress' && game.turn === opponentOf(myColor)) {
+    // If the tab was closed on the AI's turn, let it move now.
     requestAiMove();
   }
 }

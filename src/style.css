@@ -367,8 +367,14 @@ body {
 }
 
 #menu-panel {
-  width: 190px;
+  width: 210px;
   padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#solo-controls {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -398,6 +404,88 @@ body {
 #promotion-choices button:hover,
 #play-again:hover {
   background: #3a2a1c;
+}
+
+/* ---- "Play a friend" panel ---- */
+#mp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#mp-section hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid #3a2a1c;
+  margin: 2px 0;
+}
+
+#mp-idle,
+#mp-waiting,
+#mp-active {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mp-label {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  margin: 0;
+}
+
+#mp-join-row {
+  display: flex;
+  gap: 6px;
+}
+
+#mp-code-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid #6b4a34;
+  background: #1d1610;
+  color: #f2e9dc;
+}
+
+#mp-join-row button {
+  flex-shrink: 0;
+}
+
+.mp-code {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  color: #ffd54a;
+  background: #1d1610;
+  border: 1px solid #6b4a34;
+  border-radius: 6px;
+  padding: 6px 0;
+}
+
+.mp-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.mp-leave {
+  border-color: #8a4a3a !important;
+}
+
+#mp-busy p,
+#mp-error-text {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+#mp-error-text {
+  color: #ffcf6b;
 }
 
 #moves-panel {

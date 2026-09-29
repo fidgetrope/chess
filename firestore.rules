@@ -1,0 +1,39 @@
+// Security rules for the "Play a friend" mode (fidgetrope-chess Firebase
+// project). Paste this into the Firebase console: Firestore Database →
+// Rules tab → Publish. Kept here too so it's version-controlled.
+//
+// What this does and doesn't do: it checks *who* may write to *which*
+// game — you can't touch a game you're not seated in — using each
+// browser's silent anonymous auth identity. It does NOT re-validate that a
+// move is legal chess; the app checks that on the player's own device
+// before anything is ever sent. That's the right trade-off for two family
+// members on a private, unguessable game-code link — it keeps strangers
+// out, it doesn't referee the game.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /games/{gameId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+        && request.resource.data.players.white == request.auth.uid
+        && request.resource.data.players.black == null
+        && request.resource.data.moves == []
+        && gameId.matches('^[A-Z0-9]{6}$');
+
+      allow update: if request.auth != null
+        && (
+          // claiming the empty second seat
+          (resource.data.players.black == null
+            && request.resource.data.players.black == request.auth.uid
+            && request.resource.data.players.white == resource.data.players.white)
+          ||
+          // an existing player pushing a move
+          ((request.auth.uid == resource.data.players.white || request.auth.uid == resource.data.players.black)
+            && request.resource.data.players == resource.data.players)
+        );
+
+      allow delete: if false;
+    }
+  }
+}

@@ -88,8 +88,8 @@ self.onmessage = (event: MessageEvent<CoachRequest>) => {
       from: threat.move.from,
       to: threat.move.to,
       text: threat.isMate
-        ? `Watch out — the AI is threatening ${threat.move.san}, checkmate.`
-        : `Watch out — the AI is threatening ${threat.move.san}, winning ${
+        ? `Watch out — your opponent is threatening ${threat.move.san}, checkmate.`
+        : `Watch out — your opponent is threatening ${threat.move.san}, winning ${
             threat.gainCp >= 450 ? 'a piece or more' : 'a pawn or two'
           }.`,
     };

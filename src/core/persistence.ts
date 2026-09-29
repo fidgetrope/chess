@@ -1,5 +1,5 @@
 import type { DifficultyLevel } from '../ai/difficulty.ts';
-import type { PieceSymbol, ViewMode } from './types.ts';
+import type { Color, PieceSymbol, ViewMode } from './types.ts';
 
 // Continuous play: the in-progress game is written to localStorage after
 // every move, so closing the tab and coming back later resumes the exact
@@ -53,5 +53,45 @@ export function loadGame(): SavedGame | null {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+// "Play a friend" games live in Firestore, not localStorage — this is just
+// a pointer ("I'm in game X as color Y") so reopening the tab reconnects,
+// kept deliberately separate from the solo save above so a multiplayer
+// game never overwrites (or is overwritten by) the solo one.
+
+const MULTIPLAYER_KEY = 'chess.multiplayer.v1';
+
+export interface MultiplayerPointer {
+  gameId: string;
+  color: Color;
+}
+
+export function saveMultiplayerPointer(pointer: MultiplayerPointer): void {
+  try {
+    localStorage.setItem(MULTIPLAYER_KEY, JSON.stringify(pointer));
+  } catch {
+    // Storage unavailable — non-fatal; the game still works, it just won't reconnect on reload.
+  }
+}
+
+export function loadMultiplayerPointer(): MultiplayerPointer | null {
+  try {
+    const raw = localStorage.getItem(MULTIPLAYER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as MultiplayerPointer;
+    if (typeof parsed?.gameId !== 'string' || (parsed.color !== 'white' && parsed.color !== 'black')) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearMultiplayerPointer(): void {
+  try {
+    localStorage.removeItem(MULTIPLAYER_KEY);
+  } catch {
+    // non-fatal
   }
 }

@@ -12,6 +12,15 @@ export interface CoachAdvice {
   hint: { text: string; reason: string; from: string; to: string } | null;
 }
 
+/** The "Play a friend" panel's state machine — one state visible at a time. */
+export type MultiplayerUiState =
+  | { phase: 'idle' }
+  | { phase: 'creating' }
+  | { phase: 'joining' }
+  | { phase: 'waiting'; gameId: string; shareUrl: string }
+  | { phase: 'active'; color: Color }
+  | { phase: 'error'; message: string };
+
 export interface UiCallbacks {
   onDifficultyChange: (level: DifficultyLevel) => void;
   onUndo: () => void;
@@ -24,6 +33,11 @@ export interface UiCallbacks {
   onCoachPanelOpened: () => void;
   /** Fired when the hint is shown/hidden, so the controller can highlight the move. */
   onHintRevealed: (shown: boolean, move: { from: string; to: string } | null) => void;
+  onCreateGame: () => void;
+  onJoinGame: (code: string) => void;
+  onLeaveGame: () => void;
+  /** The error view's OK button — just dismiss it, no game-state side effects. */
+  onDismissMultiplayerError: () => void;
 }
 
 export interface UiHandle {
@@ -31,8 +45,10 @@ export interface UiHandle {
   setCheck: (visible: boolean) => void;
   /** Sync the difficulty <select> to a value (e.g. a restored saved game). */
   setDifficulty: (level: DifficultyLevel) => void;
-  /** `byYou` = pieces the human captured (Black men); `byAi` = White men. */
-  setCaptured: (byYou: PieceSymbol[], byAi: PieceSymbol[]) => void;
+  /** `youColor` is which side you're playing — determines the glyph colour each tray renders. */
+  setCaptured: (byYou: PieceSymbol[], byOpponent: PieceSymbol[], youColor: Color) => void;
+  /** The "AI" / "Opponent" tag in the captured-piece tray. */
+  setOpponentLabel: (text: string) => void;
   setMoveList: (sanPlies: string[]) => void;
   setUndoEnabled: (enabled: boolean) => void;
   /** Label the view button with whichever view it switches to. */
@@ -53,8 +69,11 @@ export interface UiHandle {
   askBlunderConfirm: (message: string) => Promise<boolean>;
   /** Resolves with the piece the player chose to promote to. */
   askPromotion: () => Promise<PieceSymbol>;
-  showGameOver: (outcome: GameOutcome, humanColor: Color) => void;
+  /** `opponentNoun` reads into "Checkmate — {opponentNoun} wins." — "the AI" solo, "your opponent" multiplayer. */
+  showGameOver: (outcome: GameOutcome, myColor: Color, opponentNoun: string) => void;
   hideGameOver: () => void;
+  /** Drives the "Play a friend" panel's create/join/waiting/active/error views. */
+  setMultiplayerPanel: (state: MultiplayerUiState) => void;
 }
 
 const GLYPHS: Record<Color, Record<PieceSymbol, string>> = {
@@ -75,9 +94,9 @@ function renderCaptured(container: HTMLElement, pieces: PieceSymbol[], color: Co
   container.textContent = sorted.map((p) => GLYPHS[color][p]).join('');
 }
 
-function describeOutcome(outcome: GameOutcome, humanColor: Color): string {
+function describeOutcome(outcome: GameOutcome, myColor: Color, opponentNoun: string): string {
   if (outcome.type === 'checkmate') {
-    return outcome.winner === humanColor ? 'Checkmate — you win! \u{1F3C6}' : 'Checkmate — the AI wins.';
+    return outcome.winner === myColor ? 'Checkmate — you win! \u{1F3C6}' : `Checkmate — ${opponentNoun} wins.`;
   }
   if (outcome.type === 'draw') {
     const reasons: Record<string, string> = {
@@ -108,6 +127,7 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   const capturedTray = requireEl<HTMLDivElement>('captured-tray');
   const capturedByYou = requireEl<HTMLSpanElement>('captured-by-you');
   const capturedByAi = requireEl<HTMLSpanElement>('captured-by-ai');
+  const opponentTag = requireEl<HTMLSpanElement>('opponent-tag');
   const difficultySelect = requireEl<HTMLSelectElement>('difficulty');
   const undoButton = requireEl<HTMLButtonElement>('undo');
   const restartButton = requireEl<HTMLButtonElement>('restart');
@@ -139,6 +159,23 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   const blunderMessage = requireEl<HTMLParagraphElement>('blunder-message');
   const blunderBack = requireEl<HTMLButtonElement>('blunder-back');
   const blunderPlay = requireEl<HTMLButtonElement>('blunder-play');
+  const soloControls = requireEl<HTMLDivElement>('solo-controls');
+  const mpIdle = requireEl<HTMLDivElement>('mp-idle');
+  const mpCreateBtn = requireEl<HTMLButtonElement>('mp-create');
+  const mpCodeInput = requireEl<HTMLInputElement>('mp-code-input');
+  const mpJoinBtn = requireEl<HTMLButtonElement>('mp-join');
+  const mpBusy = requireEl<HTMLDivElement>('mp-busy');
+  const mpBusyText = requireEl<HTMLParagraphElement>('mp-busy-text');
+  const mpWaiting = requireEl<HTMLDivElement>('mp-waiting');
+  const mpCode = requireEl<HTMLParagraphElement>('mp-code');
+  const mpCopyLink = requireEl<HTMLButtonElement>('mp-copy-link');
+  const mpLeaveWaiting = requireEl<HTMLButtonElement>('mp-leave-waiting');
+  const mpActive = requireEl<HTMLDivElement>('mp-active');
+  const mpActiveText = requireEl<HTMLParagraphElement>('mp-active-text');
+  const mpLeaveActive = requireEl<HTMLButtonElement>('mp-leave-active');
+  const mpError = requireEl<HTMLDivElement>('mp-error');
+  const mpErrorText = requireEl<HTMLParagraphElement>('mp-error-text');
+  const mpErrorOk = requireEl<HTMLButtonElement>('mp-error-ok');
 
   let currentHint: { from: string; to: string } | null = null;
 
@@ -256,6 +293,57 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     });
   });
 
+  // ---- "Play a friend" panel -------------------------------------------
+
+  function renderMultiplayerPanel(state: MultiplayerUiState): void {
+    soloControls.hidden = state.phase === 'waiting' || state.phase === 'active';
+    mpIdle.hidden = state.phase !== 'idle';
+    mpBusy.hidden = state.phase !== 'creating' && state.phase !== 'joining';
+    mpWaiting.hidden = state.phase !== 'waiting';
+    mpActive.hidden = state.phase !== 'active';
+    mpError.hidden = state.phase !== 'error';
+
+    if (state.phase === 'creating') mpBusyText.textContent = 'Creating your game…';
+    if (state.phase === 'joining') mpBusyText.textContent = 'Joining…';
+    if (state.phase === 'waiting') {
+      mpCode.textContent = state.gameId;
+      mpCopyLink.textContent = 'Copy invite link';
+      mpCopyLink.dataset.url = state.shareUrl;
+    }
+    if (state.phase === 'active') {
+      mpActiveText.textContent = `Playing a friend — you're ${state.color === 'white' ? 'White' : 'Black'}.`;
+    }
+    if (state.phase === 'error') {
+      mpErrorText.textContent = state.message;
+    }
+  }
+
+  mpCreateBtn.addEventListener('click', () => callbacks.onCreateGame());
+  mpJoinBtn.addEventListener('click', () => {
+    if (mpCodeInput.value.trim()) callbacks.onJoinGame(mpCodeInput.value);
+  });
+  mpCodeInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && mpCodeInput.value.trim()) callbacks.onJoinGame(mpCodeInput.value);
+  });
+  mpCopyLink.addEventListener('click', () => {
+    const url = mpCopyLink.dataset.url;
+    if (!url) return;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        mpCopyLink.textContent = 'Copied!';
+        setTimeout(() => {
+          mpCopyLink.textContent = 'Copy invite link';
+        }, 1800);
+      })
+      .catch(() => {
+        mpCopyLink.textContent = url; // clipboard blocked — show it so it can be selected by hand
+      });
+  });
+  mpLeaveWaiting.addEventListener('click', () => callbacks.onLeaveGame());
+  mpLeaveActive.addEventListener('click', () => callbacks.onLeaveGame());
+  mpErrorOk.addEventListener('click', () => callbacks.onDismissMultiplayerError());
+
   return {
     setTurn(text) {
       turnIndicator.textContent = text;
@@ -266,10 +354,14 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     setDifficulty(level) {
       difficultySelect.value = level;
     },
-    setCaptured(byYou, byAi) {
-      renderCaptured(capturedByYou, byYou, 'black');
-      renderCaptured(capturedByAi, byAi, 'white');
-      capturedTray.hidden = byYou.length === 0 && byAi.length === 0;
+    setCaptured(byYou, byOpponent, youColor) {
+      const opponentColor: Color = youColor === 'white' ? 'black' : 'white';
+      renderCaptured(capturedByYou, byYou, opponentColor); // what you capture is always the opponent's colour
+      renderCaptured(capturedByAi, byOpponent, youColor);
+      capturedTray.hidden = byYou.length === 0 && byOpponent.length === 0;
+    },
+    setOpponentLabel(text) {
+      opponentTag.textContent = text;
     },
     setMoveList(sanPlies) {
       moveList.replaceChildren();
@@ -355,12 +447,15 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
         pendingPromotion = resolve;
       });
     },
-    showGameOver(outcome, humanColor) {
-      gameOverMessage.textContent = describeOutcome(outcome, humanColor);
+    showGameOver(outcome, myColor, opponentNoun) {
+      gameOverMessage.textContent = describeOutcome(outcome, myColor, opponentNoun);
       gameOverOverlay.classList.remove('hidden');
     },
     hideGameOver() {
       gameOverOverlay.classList.add('hidden');
+    },
+    setMultiplayerPanel(state) {
+      renderMultiplayerPanel(state);
     },
   };
 }
