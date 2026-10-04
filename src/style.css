@@ -589,7 +589,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: #0b0b11;
+  background: #7a8f6e; /* sage green: tells the 2-player site apart from the vs-AI copy */
   pointer-events: auto;
 }
 
