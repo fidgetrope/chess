@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import AiWorker from '../ai/worker.ts?worker';
 import type { AiRequest, AiResponse } from '../ai/worker.ts';
-import CoachWorker from '../ai/coachWorker.ts?worker';
-import type { CoachRequest, CoachResponse } from '../ai/coachWorker.ts';
 import type { DifficultyLevel } from '../ai/difficulty.ts';
 import { ChessGame, opponentOf, squareToGrid } from '../core/game.ts';
 import type { MultiplayerSession } from '../multiplayer/multiplayerClient.ts';
@@ -56,26 +54,8 @@ export function startGame(container: HTMLElement): void {
   let mpSession: MultiplayerSession | null = null;
   let mpUnsubscribe: (() => void) | null = null;
 
-  // Coach (opt-in): a second worker analyses the human's turn, off by default.
-  let coachEnabled = false;
-  let blunderWarnEnabled = false;
-  let coachRequestId = 0;
-  let latestCoach: CoachResponse | null = null;
-  let hintMove: { from: string; to: string } | null = null;
-  let pendingBlunderCheck: { requestId: number; resolve: (b: CoachResponse['blunder']) => void } | null = null;
-
   const worker = new AiWorker();
 
-  // The coach worker is created lazily the first time the coach is actually
-  // used, so a player who never turns it on never downloads the extra chunk.
-  let coachWorker: Worker | null = null;
-  function getCoachWorker(): Worker {
-    if (!coachWorker) {
-      coachWorker = new CoachWorker();
-      coachWorker.onmessage = onCoachMessage;
-    }
-    return coachWorker;
-  }
   const pieceMeshes = new Map<string, PieceMesh>(); // keyed by algebraic square name
 
   const board2d = createBoard2d((square) => void handlePick(square));
@@ -127,7 +107,6 @@ export function startGame(container: HTMLElement): void {
         selected,
         moves: legalFromSelected,
         checkSquare,
-        hintMove,
         rejectedSquare,
       });
     } else {
@@ -137,7 +116,6 @@ export function startGame(container: HTMLElement): void {
         moves: legalFromSelected,
         checkSquare,
         lastMove: lastMovePair(),
-        hintMove,
         rejectedSquare,
       });
     }
@@ -178,95 +156,6 @@ export function startGame(container: HTMLElement): void {
     return true;
   }
 
-  // ---- Coach ----------------------------------------------------------------
-
-  function pushCoachAdvice(): void {
-    if (!coachEnabled || !latestCoach) return;
-    ui.setCoachAdvice({
-      standing: latestCoach.standing,
-      threat: latestCoach.threat?.text ?? 'No immediate threats.',
-      hint: latestCoach.hint
-        ? {
-            text: latestCoach.hint.san,
-            reason: latestCoach.hint.reason,
-            from: latestCoach.hint.from,
-            to: latestCoach.hint.to,
-          }
-        : null,
-    });
-  }
-
-  /** Analyse the current position for the coach panel — only on the human's turn, only when enabled. */
-  function requestCoachAnalysis(): void {
-    hintMove = null;
-    latestCoach = null;
-    if (
-      !coachEnabled ||
-      busy ||
-      game.turn !== myColor ||
-      game.outcome().type !== 'in-progress'
-    ) {
-      return;
-    }
-    const requestId = ++coachRequestId;
-    if (ui.isCoachPanelOpen()) ui.setCoachThinking();
-    getCoachWorker().postMessage({
-      requestId,
-      fen: game.fen(),
-      humanColor: myColor,
-      mode: 'panel',
-    } satisfies CoachRequest);
-  }
-
-  function requestBlunderCheck(move: MoveOption): Promise<CoachResponse['blunder']> {
-    return new Promise((resolve) => {
-      const requestId = ++coachRequestId;
-      pendingBlunderCheck = { requestId, resolve };
-      getCoachWorker().postMessage({
-        requestId,
-        fen: game.fen(),
-        humanColor: myColor,
-        mode: 'blunderCheck',
-        move: { from: move.from, to: move.to, promotion: move.promotion },
-      } satisfies CoachRequest);
-    });
-  }
-
-  function blunderPhrase(verdict: NonNullable<CoachResponse['blunder']>): string {
-    if (verdict.intoMate) return 'walks into a forced mate';
-    if (verdict.dropCp >= 300) return 'looks like it drops a piece';
-    return 'looks like it loses material';
-  }
-
-  /** Returns false only when the coach flags a blunder and the player chooses to take it back. */
-  async function confirmMove(move: MoveOption): Promise<boolean> {
-    if (!blunderWarnEnabled) return true;
-    // The coach's own top move is never a blunder.
-    if (latestCoach?.hint && latestCoach.hint.from === move.from && latestCoach.hint.to === move.to) {
-      return true;
-    }
-    const verdict = await requestBlunderCheck(move);
-    if (!verdict) return true;
-    return ui.askBlunderConfirm(
-      `That ${blunderPhrase(verdict)} — the engine prefers ${verdict.bestSan}. Play it anyway?`,
-    );
-  }
-
-  function onCoachMessage(event: MessageEvent<CoachResponse>): void {
-    const msg = event.data;
-    if (msg.mode === 'blunderCheck') {
-      if (pendingBlunderCheck?.requestId === msg.requestId) {
-        const resolve = pendingBlunderCheck.resolve;
-        pendingBlunderCheck = null;
-        resolve(msg.blunder);
-      }
-      return;
-    }
-    if (msg.requestId !== coachRequestId) return; // stale
-    latestCoach = msg;
-    if (ui.isCoachPanelOpen()) pushCoachAdvice();
-  }
-
   function updateCapturedUi(): void {
     const byMe: PieceSymbol[] = [];
     const byOpponent: PieceSymbol[] = [];
@@ -294,15 +183,19 @@ export function startGame(container: HTMLElement): void {
     ui.setCheck(game.inCheck());
   }
 
-  /** Multiplayer state lives in Firestore, not localStorage — only solo games use the save slot. */
+  /**
+   * Solo games save their moves; a "Play a friend" game lives in Firestore,
+   * so while in one only the preferences (2D/3D, explain-moves) are written —
+   * merged into the existing solo save so the solo game isn't disturbed.
+   * (Skipping the save entirely, as this used to, meant a setting changed
+   * during an online game was forgotten next visit.)
+   */
   function persist(): void {
-    if (mpSession) return;
+    const solo = mpSession ? loadGame() : null;
     saveGame({
-      moves: historyAsSavedMoves(),
-      difficulty,
+      moves: mpSession ? (solo?.moves ?? []) : historyAsSavedMoves(),
+      difficulty: mpSession ? (solo?.difficulty ?? difficulty) : difficulty,
       view: viewMode,
-      coach: coachEnabled,
-      blunderWarn: blunderWarnEnabled,
       explainMoves: explainMovesEnabled,
     });
   }
@@ -329,7 +222,6 @@ export function startGame(container: HTMLElement): void {
     updateCapturedUi();
     ui.setUndoEnabled(!mpSession && !busy && game.plyCount() > 0 && game.turn === myColor);
     updateStatusUi();
-    requestCoachAnalysis(); // clears any stale hint; fires a fresh analysis on the human's turn
     refreshView();
     persist();
   }
@@ -462,10 +354,6 @@ export function startGame(container: HTMLElement): void {
         if (move.isPromotion) {
           const piece = await ui.askPromotion();
           move = matches.find((m) => m.promotion === piece) ?? move;
-        }
-        if (!(await confirmMove(move))) {
-          clearSelection();
-          return;
         }
         await playMove(move);
         if (mpSession) void mpSession.pushMoves(historyAsSavedMoves());
@@ -701,34 +589,10 @@ export function startGame(container: HTMLElement): void {
     onToggleView() {
       toggleView();
     },
-    onCoachEnabledChange(enabled) {
-      coachEnabled = enabled;
-      ui.setCoachSettings(coachEnabled, blunderWarnEnabled, explainMovesEnabled);
-      persist();
-      if (enabled) requestCoachAnalysis();
-      else {
-        hintMove = null;
-        latestCoach = null;
-        refreshView();
-      }
-    },
-    onBlunderWarnChange(enabled) {
-      blunderWarnEnabled = enabled;
-      persist();
-    },
     onExplainMovesChange(enabled) {
       explainMovesEnabled = enabled;
       if (!enabled) clearRulesNote();
       persist();
-    },
-    onCoachPanelOpened() {
-      if (!coachEnabled) return;
-      if (latestCoach) pushCoachAdvice();
-      else requestCoachAnalysis();
-    },
-    onHintRevealed(shown, move) {
-      hintMove = shown ? move : null;
-      refreshView();
     },
     onCreateGame(hostColor) {
       void startMultiplayerCreate(hostColor);
@@ -758,10 +622,8 @@ export function startGame(container: HTMLElement): void {
     difficulty = saved.difficulty;
     ui.setDifficulty(saved.difficulty);
     if (saved.view === '2d' || saved.view === '3d') viewMode = saved.view;
-    coachEnabled = saved.coach === true;
-    blunderWarnEnabled = saved.blunderWarn === true;
     explainMovesEnabled = saved.explainMoves !== false; // absent → on
-    ui.setCoachSettings(coachEnabled, blunderWarnEnabled, explainMovesEnabled);
+    ui.setExplainMoves(explainMovesEnabled);
     for (const move of saved.moves) {
       try {
         game.move(move);
@@ -786,7 +648,7 @@ export function startGame(container: HTMLElement): void {
   // The solo game restores first regardless — it's what's waiting if a
   // multiplayer connection below fails, or once the player leaves one.
   restoreSavedGame();
-  ui.setCoachSettings(coachEnabled, blunderWarnEnabled, explainMovesEnabled);
+  ui.setExplainMoves(explainMovesEnabled);
   rebuildPieceMeshes();
   syncUiAfterMove();
   applyViewMode();

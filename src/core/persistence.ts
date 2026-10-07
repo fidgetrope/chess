@@ -21,8 +21,6 @@ export interface SavedGame {
   moves: SavedMove[];
   difficulty: DifficultyLevel;
   view?: ViewMode;
-  coach?: boolean;
-  blunderWarn?: boolean;
   /** "Explain moves I can't make" — absent means on (opt-out). */
   explainMoves?: boolean;
   savedAt: number;
@@ -32,8 +30,6 @@ export function saveGame(state: {
   moves: SavedMove[];
   difficulty: DifficultyLevel;
   view: ViewMode;
-  coach: boolean;
-  blunderWarn: boolean;
   explainMoves: boolean;
 }): void {
   try {
