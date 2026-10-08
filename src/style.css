@@ -276,7 +276,8 @@ body {
 #menu-panel select,
 #menu-panel button,
 #promotion-choices button,
-#play-again {
+#play-again,
+#view-board {
   font: inherit;
   font-size: 0.85rem;
   padding: 7px 10px;
@@ -290,7 +291,8 @@ body {
 #menu-panel select:hover,
 #menu-panel button:hover,
 #promotion-choices button:hover,
-#play-again:hover {
+#play-again:hover,
+#view-board:hover {
   background: #3a2a1c;
 }
 
@@ -466,6 +468,12 @@ body {
   font-size: 1.4rem;
   font-weight: 700;
   margin: 0 0 18px;
+}
+
+#game-over-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
 }
 
 /* ---- 2D flat board: the BBC "Master Game" look ---- */

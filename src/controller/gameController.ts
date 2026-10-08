@@ -174,7 +174,7 @@ export function startGame(container: HTMLElement): void {
     if (outcome.type !== 'in-progress') {
       ui.setTurn('Game over');
       ui.setCheck(false);
-      ui.showGameOver(outcome, myColor, mpSession ? 'your opponent' : 'the AI');
+      ui.showGameOver(outcome, myColor, mpSession ? 'your opponent' : 'the AI', !!mpSession);
       return;
     }
     ui.hideGameOver();

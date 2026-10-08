@@ -47,7 +47,7 @@ export interface UiHandle {
   /** Resolves with the piece the player chose to promote to. */
   askPromotion: () => Promise<PieceSymbol>;
   /** `opponentNoun` reads into "Checkmate — {opponentNoun} wins." — "the AI" solo, "your opponent" multiplayer. */
-  showGameOver: (outcome: GameOutcome, myColor: Color, opponentNoun: string) => void;
+  showGameOver: (outcome: GameOutcome, myColor: Color, opponentNoun: string, online: boolean) => void;
   hideGameOver: () => void;
   /** Drives the "Play a friend" panel's create/join/waiting/active/error views. */
   setMultiplayerPanel: (state: MultiplayerUiState) => void;
@@ -121,6 +121,7 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   const gameOverOverlay = requireEl<HTMLDivElement>('game-over');
   const gameOverMessage = requireEl<HTMLParagraphElement>('game-over-message');
   const playAgainButton = requireEl<HTMLButtonElement>('play-again');
+  const viewBoardButton = requireEl<HTMLButtonElement>('view-board');
   const soloControls = requireEl<HTMLDivElement>('solo-controls');
   const mpIdle = requireEl<HTMLDivElement>('mp-idle');
   const mpCreateBtn = requireEl<HTMLButtonElement>('mp-create');
@@ -190,7 +191,14 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     closePanels();
     callbacks.onRestart();
   });
-  playAgainButton.addEventListener('click', () => callbacks.onRestart());
+  // Online, there's no "restart" (the game lives in Firestore), so the same
+  // button leaves it instead and drops back to a fresh solo game.
+  let gameOverOnline = false;
+  playAgainButton.addEventListener('click', () => {
+    if (gameOverOnline) callbacks.onLeaveGame();
+    else callbacks.onRestart();
+  });
+  viewBoardButton.addEventListener('click', () => gameOverOverlay.classList.add('hidden'));
 
   let pendingPromotion: ((piece: PieceSymbol) => void) | null = null;
   promotionChoices.querySelectorAll<HTMLButtonElement>('button[data-piece]').forEach((button) => {
@@ -321,7 +329,9 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
         pendingPromotion = resolve;
       });
     },
-    showGameOver(outcome, myColor, opponentNoun) {
+    showGameOver(outcome, myColor, opponentNoun, online) {
+      gameOverOnline = online;
+      playAgainButton.textContent = online ? 'Leave game' : 'Play Again';
       gameOverMessage.textContent = describeOutcome(outcome, myColor, opponentNoun);
       gameOverOverlay.classList.remove('hidden');
     },
