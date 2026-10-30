@@ -12,6 +12,14 @@ export type MultiplayerUiState =
   | { phase: 'active'; color: Color }
   | { phase: 'error'; message: string };
 
+// Padlock icons for the lock button — drawn rather than emoji so open and
+// closed look clearly different on every phone (emoji padlocks vary a lot).
+const PADLOCK_BODY = '<rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/>';
+const PADLOCK_SVG = (shackle: string): string =>
+  `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">${PADLOCK_BODY}<path d="${shackle}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+export const PADLOCK_CLOSED = PADLOCK_SVG('M8 11V7.5a4 4 0 0 1 8 0V11');
+export const PADLOCK_OPEN = PADLOCK_SVG('M8 11V7.5a4 4 0 0 1 7.6-1.7');
+
 export interface UiCallbacks {
   onDifficultyChange: (level: DifficultyLevel) => void;
   onUndo: () => void;
@@ -319,7 +327,7 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
       viewToggle.title = mode === '3d' ? 'Switch to the flat board' : 'Switch to the 3D board';
     },
     setLocked(locked) {
-      lockToggle.textContent = locked ? '🔒' : '🔓';
+      lockToggle.innerHTML = locked ? PADLOCK_CLOSED : PADLOCK_OPEN;
       lockToggle.classList.toggle('locked', locked);
       lockToggle.setAttribute('aria-pressed', String(locked));
       lockToggle.title = locked ? 'Board locked — tap to unlock' : 'Lock the board so stray taps do nothing';

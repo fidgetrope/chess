@@ -35,8 +35,9 @@ export function startGame(container: HTMLElement): void {
   let selected: Square | null = null;
   let legalFromSelected: MoveOption[] = [];
   let busy = false; // true while animating or waiting on the AI
-  // Padlock: while on, board taps are ignored so a hovering finger can't
-  // pick or move a piece by accident. Deliberately not saved between visits.
+  // Padlock: while on, pieces can be tapped to see their moves but no move
+  // is played, so a stray touch can't move anything. Deliberately not saved
+  // between visits.
   let screenLocked = false;
 
   // Which colour *this* browser is playing. Always white against the AI;
@@ -344,10 +345,6 @@ export function startGame(container: HTMLElement): void {
 
   async function handlePick(square: Square | null): Promise<void> {
     clearRulesNote();
-    if (screenLocked) {
-      showRulesNote('Screen locked — tap the padlock to unlock');
-      return;
-    }
     if (busy || game.outcome().type !== 'in-progress' || game.turn !== myColor) return;
     if (!square) {
       clearSelection();
@@ -357,6 +354,12 @@ export function startGame(container: HTMLElement): void {
     if (selected) {
       const matches = legalFromSelected.filter((m) => m.to === squareKey(square));
       if (matches.length > 0) {
+        // Locked: pieces can still be picked up to look at their moves, but
+        // nothing is played until the padlock is opened.
+        if (screenLocked) {
+          showRulesNote('Board locked — tap the padlock to unlock before moving');
+          return;
+        }
         let move = matches[0];
         if (move.isPromotion) {
           const piece = await ui.askPromotion();
@@ -599,7 +602,6 @@ export function startGame(container: HTMLElement): void {
     onToggleLock() {
       screenLocked = !screenLocked;
       clearRulesNote();
-      if (screenLocked) clearSelection();
       ui.setLocked(screenLocked);
     },
     onExplainMovesChange(enabled) {
