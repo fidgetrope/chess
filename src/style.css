@@ -164,6 +164,12 @@ body {
   padding: 5px 9px;
 }
 
+/* Padlock: amber while the board is locked so it's obvious at a glance. */
+#hud-actions #lock-toggle.locked {
+  background: #7a5214;
+  border-color: #d9a441;
+}
+
 #hud-actions button[aria-expanded='true'] {
   background: #3a2a1c;
   border-color: #6b4a34;

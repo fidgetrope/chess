@@ -17,6 +17,7 @@ export interface UiCallbacks {
   onUndo: () => void;
   onRestart: () => void;
   onToggleView: () => void;
+  onToggleLock: () => void;
   onExplainMovesChange: (enabled: boolean) => void;
   onCreateGame: (hostColor: Color | 'random') => void;
   onJoinGame: (code: string) => void;
@@ -38,6 +39,8 @@ export interface UiHandle {
   setUndoEnabled: (enabled: boolean) => void;
   /** Label the view button with whichever view it switches to. */
   setViewMode: (mode: ViewMode) => void;
+  /** Show the padlock button as locked (board taps ignored) or unlocked. */
+  setLocked: (locked: boolean) => void;
   /** Close the Moves / settings drop-downs (e.g. when the player taps the board). */
   closePanels: () => void;
   /** Sync the "Explain moves I can't make" checkbox (e.g. from a restored game). */
@@ -110,6 +113,7 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   const restartButton = requireEl<HTMLButtonElement>('restart');
   const movesToggle = requireEl<HTMLButtonElement>('moves-toggle');
   const viewToggle = requireEl<HTMLButtonElement>('view-toggle');
+  const lockToggle = requireEl<HTMLButtonElement>('lock-toggle');
   const menuToggle = requireEl<HTMLButtonElement>('menu-toggle');
   const movesPanel = requireEl<HTMLDivElement>('moves-panel');
   const menuPanel = requireEl<HTMLDivElement>('menu-panel');
@@ -186,6 +190,10 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
   viewToggle.addEventListener('click', () => {
     closePanels();
     callbacks.onToggleView();
+  });
+  lockToggle.addEventListener('click', () => {
+    closePanels();
+    callbacks.onToggleLock();
   });
   restartButton.addEventListener('click', () => {
     closePanels();
@@ -309,6 +317,12 @@ export function createUi(callbacks: UiCallbacks): UiHandle {
     setViewMode(mode) {
       viewToggle.textContent = mode === '3d' ? '2D' : '3D';
       viewToggle.title = mode === '3d' ? 'Switch to the flat board' : 'Switch to the 3D board';
+    },
+    setLocked(locked) {
+      lockToggle.textContent = locked ? '🔒' : '🔓';
+      lockToggle.classList.toggle('locked', locked);
+      lockToggle.setAttribute('aria-pressed', String(locked));
+      lockToggle.title = locked ? 'Board locked — tap to unlock' : 'Lock the board so stray taps do nothing';
     },
     closePanels,
     setExplainMoves(explainMoves) {
